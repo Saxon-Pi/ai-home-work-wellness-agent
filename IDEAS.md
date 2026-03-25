@@ -127,8 +127,23 @@ IoT Core で扱いやすいハードが望ましい
 
 ---
 
-## LINE連携
+### IoT Core ペイロードイメージ
+ラズパイ → IoT Core には以下の形式でデータを送信する  
+トピック：wellness/device/raspi-home-1/telemetry
 
+```json
+{
+  "device_id": "raspi-home-1",
+  "timestamp": "2026-04-01T09:00:00Z",
+  "temperature": 28.1,
+  "humidity": 42.3,
+  "co2_ppm": 1320
+}
+```
+
+---
+
+## LINE連携
 Slack 通知は散々やってるので LINE を使いたい  
 モバイル連携向けな点も👌
 
