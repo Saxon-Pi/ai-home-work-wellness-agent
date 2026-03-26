@@ -3,6 +3,7 @@ import { Construct } from "constructs";
 import * as timestream from "aws-cdk-lib/aws-timestream";
 import * as iot from "aws-cdk-lib/aws-iot";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -12,18 +13,18 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // IAM Role
     // =====================================================
 
-    const iotToTimestreamRole = new iam.Role(this, "IotToTimestreamRole", {
-      assumedBy: new iam.ServicePrincipal("iot.amazonaws.com"),
-    });
-    iotToTimestreamRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "timestream:WriteRecords",
-          "timestream:DescribeEndpoints",
-        ],
-        resources: ["*"],
-      })
-    );
+    // const iotToTimestreamRole = new iam.Role(this, "IotToTimestreamRole", {
+    //   assumedBy: new iam.ServicePrincipal("iot.amazonaws.com"),
+    // });
+    // iotToTimestreamRole.addToPolicy(
+    //   new iam.PolicyStatement({
+    //     actions: [
+    //       "timestream:WriteRecords",
+    //       "timestream:DescribeEndpoints",
+    //     ],
+    //     resources: ["*"],
+    //   })
+    // );
 
     // =====================================================
     // Timestream
@@ -51,6 +52,31 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     tsTable.addDependency(tsDatabase);
 
     // =====================================================
+    // Lambda
+    // =====================================================
+
+    const ingestFn = new lambda.Function(this, "IngestLambda", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset("services/ingest_lambda"),
+      environment: {
+        TIMESTREAM_DATABASE_NAME: tsDatabase.databaseName!,
+        TIMESTREAM_TABLE_NAME: tsTable.tableName!,
+      },
+    });
+
+    // Lambda に Timestream 書き込み権限を付与
+    ingestFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "timestream:WriteRecords",
+          "timestream:DescribeEndpoints",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    // =====================================================
     // IoT Core
     // =====================================================
 
@@ -64,29 +90,23 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         sql: "SELECT * FROM 'wellness/device/+/telemetry'",
         awsIotSqlVersion: "2016-03-23",
         actions: [
-          // Timestream テーブルにデータを送信
-          // measures (温度/湿度/二酸化炭素濃度) の 送信は Lambda で実装
+          // Ingest Lambda を起動 (Lambda内でセンサーデータをTimestreamに書き込み)
           {
-            timestream: {
-              roleArn: iotToTimestreamRole.roleArn,
-              databaseName: tsDatabase.databaseName!,
-              tableName: tsTable.tableName!,
-              dimensions: [
-                {
-                  name: "device_id", // デバイスID (ラズパイ)
-                  value: "${device_id}",
-                },
-              ],
-              timestamp: {
-                unit: "MILLISECONDS",
-                value: "${timestamp_ms}", 
-              },
+            lambda: {
+            functionArn: ingestFn.functionArn,
             },
           },
         ],
       },
     });
     topicRule.node.addDependency(tsTable);
+
+    // IoT Core から Lambda を起動できるように permission 追加
+    ingestFn.addPermission("AllowIoTInvokeLambda", {
+      principal: new iam.ServicePrincipal("iot.amazonaws.com"),
+      action: "lambda:InvokeFunction",
+      sourceArn: `arn:aws:iot:${this.region}:${this.account}:rule/WellnessTelemetryRule`,
+    });
 
     // =====================================================
     // Outputs
