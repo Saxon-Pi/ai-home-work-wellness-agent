@@ -1,13 +1,14 @@
 """
 IoT Core → Ingest Lambda → Timestream
-- IoT Core から来た payload を受ける
-- 必須項目を読む
-- Timestream に WriteRecords する
+Rule の対象 topic にマッチするメッセージが来たら Ingest Lambda が起動する
+- IoT Core から来た payload を受け取る
+- payload からデータを抽出する
+- Timestream にデータを WriteRecords する
 """
+
 import json
 import os
 from typing import Any, Dict, List
-
 import boto3
 
 timestream = boto3.client("timestream-write")
@@ -15,7 +16,7 @@ timestream = boto3.client("timestream-write")
 DATABASE_NAME = os.environ["TIMESTREAM_DATABASE_NAME"]
 TABLE_NAME = os.environ["TIMESTREAM_TABLE_NAME"]
 
-# payload から必要なデータを取り出す
+# payload からデータを抽出し、Timestream の書き込み仕様に合わせたデータ構造に整形
 def build_records(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     device_id = str(event["device_id"])       # デバイスID
     timestamp_ms = str(event["timestamp_ms"]) # タイムスタンプ
@@ -23,6 +24,7 @@ def build_records(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     humidity = str(event["humidity"])         # 湿度
     co2_ppm = str(event["co2_ppm"])           # CO2濃度
 
+    # 共通データ (payload内の全measureに共通の項目)
     common_attributes = {
         "Dimensions": [
             {
@@ -34,6 +36,7 @@ def build_records(event: Dict[str, Any]) -> List[Dict[str, Any]]:
         "TimeUnit": "MILLISECONDS",
     }
 
+    # 個別データ (その時刻・そのデバイスにおける観測項目)
     records = [
         {
             "MeasureName": "temperature",
@@ -53,3 +56,32 @@ def build_records(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
     return common_attributes, records
+
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    print("Received event:", json.dumps(event, ensure_ascii=False))
+
+    # 必要なデータが揃っていない場合はエラー
+    required_keys = ["device_id", "timestamp_ms", "temperature", "humidity", "co2_ppm"]
+    missing_keys = [key for key in required_keys if key not in event]
+
+    if missing_keys:
+        raise ValueError(f"Missing required keys: {missing_keys}")
+
+    # データが揃っていれば構造化
+    common_attributes, records = build_records(event)
+    
+    # Timestream に書き込み
+    response = timestream.write_records(
+        DatabaseName=DATABASE_NAME,
+        TableName=TABLE_NAME,
+        Records=records,
+        CommonAttributes=common_attributes,
+    )
+
+    print("Timestream write response:", json.dumps(response, default=str))
+
+    return {
+        "ok": True,
+        "device_id": event["device_id"],
+        "record_count": len(records),
+    }
