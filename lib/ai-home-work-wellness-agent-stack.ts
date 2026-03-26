@@ -58,8 +58,9 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     const topicRule = new iot.CfnTopicRule(this, "WellnessTelemetryRule", {
       topicRulePayload: {
         ruleDisabled: false,
-        // rule が「どの topic を対象にするか」を SQL で定義
-        // topic: wellness/device/+/telemetry (ワイルドカード使用可)
+        // rule が「どの topic を対象にするか」を SQL で定義 (rule: filter + router)
+        // topic: wellness/device/+/telemetry (ワイルドカード) を対象に、
+        // マッチしたら actions を実行する
         sql: "SELECT * FROM 'wellness/device/+/telemetry'",
         awsIotSqlVersion: "2016-03-23",
         actions: [
