@@ -18,11 +18,18 @@ TABLE_NAME = os.environ["TIMESTREAM_TABLE_NAME"]
 
 # payload からデータを抽出し、Timestream の書き込み仕様に合わせたデータ構造に整形
 def build_records(event: Dict[str, Any]) -> List[Dict[str, Any]]:
-    device_id = str(event["device_id"])       # デバイスID
-    timestamp_ms = str(event["timestamp_ms"]) # タイムスタンプ
-    temperature = str(event["temperature"])   # 温度
-    humidity = str(event["humidity"])         # 湿度
-    co2_ppm = str(event["co2_ppm"])           # CO2濃度
+    device_id    = str(event["device_id"])     # デバイスID
+    timestamp_ms = str(event["timestamp_ms"])  # タイムスタンプ
+    temperature  = float(event["temperature"]) # 温度
+    humidity     = float(event["humidity"])    # 湿度
+    co2_ppm      = int(event["co2_ppm"])       # CO2濃度
+
+    print("Parsed values:", {
+        "device_id": device_id,
+        "temperature": temperature,
+        "humidity": humidity,
+        "co2_ppm": co2_ppm,
+    })
 
     # 共通データ (payload内の全measureに共通の項目)
     common_attributes = {
@@ -66,9 +73,13 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     if missing_keys:
         raise ValueError(f"Missing required keys: {missing_keys}")
-
+    
     # データが揃っていれば構造化
-    common_attributes, records = build_records(event)
+    try:    
+        common_attributes, records = build_records(event)
+    except Exception as e:
+        print("Build records failed: ", str(e))
+        raise
     
     # Timestream に書き込み
     response = timestream.write_records(
