@@ -6,6 +6,7 @@
 - IoT Core 使いたい
 - 電子工作したい
 - Timestream 使いたい（Grafanaで可視化したい）
+    → Timestream for LiveAnalytics が 25 年 6 月でアクセス終了のため代替案検討
 - LINE と連携させたい
 - いい感じのアーキ図描きたい
 - どうせ作るなら役に立つものを実用レベルまで仕上げる
