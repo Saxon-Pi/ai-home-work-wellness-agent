@@ -30,7 +30,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         raise ValueError(f"Missing required keys: {missing_keys}")
     
     device_id    = str(event["device_id"])     # デバイスID
-    timestamp_ms = str(event["timestamp_ms"])  # タイムスタンプ
+    timestamp_ms = int(event["timestamp_ms"])  # タイムスタンプ
     temperature  = float(event["temperature"]) # 温度
     humidity     = float(event["humidity"])    # 湿度
     co2_ppm      = int(event["co2_ppm"])       # CO2濃度
