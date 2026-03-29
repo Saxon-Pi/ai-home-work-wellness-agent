@@ -17,7 +17,7 @@ CLIENT_ID = "raspi-home-1"
 # トピック名
 TOPIC = "wellness/device/raspi-home-1/telemetry"
 
-# 各証明書の格納先、ファイル名に合わせる
+# ダウンロードした証明書ファイル名が異なる場合は、ファイル名に合わせて変更すること
 CA_PATH = "AmazonRootCA1.pem"
 CERT_PATH = "certificate.pem.crt"
 KEY_PATH = "private.pem.key"

@@ -13,7 +13,7 @@ ENDPOINT = "a1hfmham2ql5ac-ats.iot.ap-northeast-1.amazonaws.com"
 client = AWSIoTMQTTClient("raspi-home-1")
 
 client.configureEndpoint(ENDPOINT, 8883)
-# 各証明書の格納先、ファイル名に合わせる
+# ダウンロードした証明書ファイル名が異なる場合は、ファイル名に合わせて変更すること
 client.configureCredentials(
     "certs/AmazonRootCA1.pem",
     "certs/private.pem.key",
