@@ -20,6 +20,7 @@
 flowchart LR
 RaspberryPi --> IoTCore --> Lambda --> DynamoDB
 ```
+※ Raspberry Pi 3 Model B V1.2 使用
 
 ------------------------------------------------------------------------
 
