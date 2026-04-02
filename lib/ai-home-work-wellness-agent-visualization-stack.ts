@@ -24,9 +24,8 @@ export class AiHomeWorkWellnessAgentVisualizationStack extends cdk.Stack {
     });
 
     /*
-    Grafana Workspace の authenticationProviders: ["AWS_SSO"] にする場合、
-    IAM Identity Center の有効化が必要
-    今回はデータの一時的な可視化目的のため、Grafana Workspace はコンソールから作成する
+    Grafana Workspace の認証を AWS SSO にする場合、IAM Identity Center の有効化が必要
+    今回はデータの一時的な可視化目的のため、Grafana Workspace はコンソールから作成とする
     */
 
     // // Grafana が Athena / Glue / S3 を参照するための IAM ロール
