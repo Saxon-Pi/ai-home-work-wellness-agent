@@ -22,6 +22,11 @@ Athena 実行結果格納用 S3 バケットを作成していること
 
 ------------------------------------------------------------------------
 
+## 注意事項
+- Amazon Managed Grafana は無料期間終了後は課金されるため、不要な場合は削除すること
+
+------------------------------------------------------------------------
+
 ## ステップ
 1. Athena DynamoDB コネクタ作成
 2. Athena 動作確認
@@ -40,7 +45,7 @@ Athena 実行結果格納用 S3 バケットを作成していること
 **Amazon DynamoDB** を選択し、**次へ** をクリックする  
 ![データソース選択](./img/grafana/2.png)
 
-**データソース名**、**Amazon S3 内の流出場所** を入力し、**次へ** をクリックする  
+**データソース名**、**クエリ結果の出力先（S3）** を入力し、**次へ** をクリックする  
 ※ S3 は prefix まで指定が必要  
 ![データソース詳細](./img/grafana/3.png)
 
@@ -158,7 +163,7 @@ You do not have permission to install this plugin.
 
 以下の項目を設定し、**Save & test** が成功すれば完了  
 - Name：データソース名（**default** は有効化）
-- Authentication Provider：**Worksoace IAM Role** のままで OK
+- Authentication Provider：**Workspace IAM Role** のままで OK
 - Default Region：ap-northeast-1
 - Data source：作成した Athena のデータソース名
 - Database：default
@@ -198,6 +203,7 @@ LIMIT 10;
 
 右側のグラフタイプから、**Time series** を選択し、  
 CO2濃度を取得するクエリを入力して **Run query** をクリックする  
+※ Athenaでは数値が文字列として扱われる場合があるため、CASTで数値型に変換する  
 ```sql
 SELECT
   from_unixtime(timestamp_ms / 1000) as time,
@@ -216,11 +222,46 @@ ORDER BY time
 
 ## おまけ
 最終的なダッシュボードは以下となる  
-測定中にセンサーに息を吹きかけた後、手で握ったため、以下の変化をグラフで確認することができる　　  
-- CO2：呼気で急上昇 → 徐々に低下
+→ 実際の環境変化（呼気・体温）がセンサーデータとして可視化されていることが確認できる
+- CO2：息を吹きかけ急上昇 → 徐々に低下
 - 温度：呼気の後に手で握ったため、遅れて上昇
 - 湿度：温度に追従するように上昇
 
 ![完成系](./img/grafana/36.png)
+
+### 各グラフのクエリ
+#### CO2
+```sql
+SELECT
+  from_unixtime(timestamp_ms / 1000) as time,
+  CAST(co2_ppm AS DOUBLE) / 1000 as co2_ppm
+FROM "dynamodb_datasource"."room_metrics"
+WHERE
+  device_id = 'raspi-home-1'
+  AND timestamp_ms BETWEEN $__from AND $__to
+ORDER BY time
+```
+#### Temperature
+```sql
+SELECT
+  from_unixtime(timestamp_ms / 1000) as time,
+  CAST(temperature AS DOUBLE) as temperature
+FROM "dynamodb_datasource"."room_metrics"
+WHERE
+  device_id = 'raspi-home-1'
+  AND timestamp_ms BETWEEN $__from AND $__to
+ORDER BY time
+```
+#### Humidity
+```sql
+SELECT
+  from_unixtime(timestamp_ms / 1000) as time,
+  CAST(humidity AS DOUBLE) as humidity
+FROM "dynamodb_datasource"."room_metrics"
+WHERE
+  device_id = 'raspi-home-1'
+  AND timestamp_ms BETWEEN $__from AND $__to
+ORDER BY time
+```
 
 ------------------------------------------------------------------------
