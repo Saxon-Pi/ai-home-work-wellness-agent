@@ -16,8 +16,11 @@
 ------------------------------------------------------------------------
 
 ## 構成概要
-
-Raspberry Pi → IoT Core → Lambda → DynamoDB
+```mermaid
+flowchart LR
+RaspberryPi --> IoTCore --> Lambda --> DynamoDB
+```
+※ Raspberry Pi 3 Model B V1.2 使用
 
 ------------------------------------------------------------------------
 
