@@ -139,17 +139,21 @@ Grafana のユーザのユーザタイプが **管理者** であること
 **プラグイン管理をオンにする** にチェックを入れて **変更の保存** をクリックする  
 ![プラグイン管理2](./img/grafana/24.png)
 
+---
+
 ### Data sources 設定
 左側のメニューの **Connections** から **Add new connection** を選択し、  
 **Amazon Athena** をクリックする  
 ![connection](./img/grafana/25.png)
 
-Athena をインストールする  
+右上の **Install** ボタンをクリックし、Athena をインストールする  
 ※ ここで以下のメッセージが表示される場合は、**前提** に記載した設定を確認すること  
 ```log
 You do not have permission to install this plugin.
 ```
 ![install1](./img/grafana/26.png)
+
+インストールが完了したら **Add new data source** ボタンをクリックする  
 ![install2](./img/grafana/27.png)
 
 以下の項目を設定し、**Save & test** が成功すれば完了  
@@ -163,6 +167,60 @@ You do not have permission to install this plugin.
 
 ![settings1](./img/grafana/28.png)
 ![settings2](./img/grafana/29.png)
+
+---
+
+#### エラー対策
+**Save & test** で失敗する場合、原因の多くが Grafana 用 IAM ロールの権限不足のため、以下を確認する
+- **Output Location** の S3 バケットに対して `GetBucketLocation` 権限があるか
+- Athena の DynamoDB コネクタの Lambda に対して`lambda:InvokeFunction` 権限があるか
 ------------------------------------------------------------------------
 
 ## Step6. ダッシュボード作成
+左のメニューから **Explore** を選択し、以下のクエリを入力して **Run query** をクリックする  
+→ DynamoDB のセンサデータが取得できることを確認  
+```sql
+SELECT *
+FROM "dynamodb_datasource"."room_metrics"
+LIMIT 10;
+```
+![query](./img/grafana/30.png)
+
+**+Add** ボタンから **Add to dashboard** を選択し、  
+![ダッシュボード作成1](./img/grafana/31.png)
+
+**New dashboard** から **Open in new tab** をクリックする  
+![ダッシュボード作成2](./img/grafana/32.png)
+
+ダッシュボード画面に移動する  
+時系列グラフをダッシュボードに追加するため、**Add** から **Visualization** を選択する
+![ダッシュボード作成3](./img/grafana/33.png)
+
+右側のグラフタイプから、**Time series** を選択し、  
+CO2濃度を取得するクエリを入力して **Run query** をクリックする  
+```sql
+SELECT
+  from_unixtime(timestamp_ms / 1000) as time,
+  CAST(co2_ppm AS DOUBLE) as co2_ppm
+FROM "dynamodb_datasource"."room_metrics"
+ORDER BY time
+```
+![ダッシュボード作成4](./img/grafana/34.png)
+
+時系列グラフが作成される  
+![CO2グラフ](./img/grafana/35.png)
+
+以上で、**DynamoDB に登録した SCD40 のデータを Grafana で可視化**することができた  
+
+------------------------------------------------------------------------
+
+## おまけ
+最終的なダッシュボードは以下となる  
+測定中にセンサーに息を吹きかけた後、手で握ったため、以下の変化をグラフで確認することができる　　  
+- CO2：呼気で急上昇 → 徐々に低下
+- 温度：呼気の後に手で握ったため、遅れて上昇
+- 湿度：温度に追従するように上昇
+
+![完成系](./img/grafana/36.png)
+
+------------------------------------------------------------------------
