@@ -134,3 +134,76 @@ def summarize_sensor_data(items: List[Dict[str, Any]]) -> Dict[str, Any]:
       },
       "co2_trend": co2_trend,
     }
+
+def build_prompt(summary: dict) -> str:
+    if summary.get("count", 0) == 0:
+        return (
+            "室内環境データが取得できませんでした。"
+            "データ欠損時の短い案内を日本語で返してください。"
+        )
+
+    latest = summary["latest"]
+    avg_1h = summary["avg_1h"]
+    max_1h = summary["max_1h"]
+    co2_trend = summary["co2_trend"]
+
+    return f"""
+[役割]
+あなたはテレワークで働く人々の健康を支援する Wellness Support Specialist です。
+
+[目的]
+以下の室内環境データをもとに、ユーザが快適・効率的に仕事ができるように、
+短く自然な日本語でアドバイスをしてください。
+
+[室内環境データ]
+【現在値】
+- CO2: {latest['co2_ppm']} ppm
+- 温度: {latest['temperature']} ℃
+- 湿度: {latest['humidity']} %
+
+【直近1時間の平均】
+- CO2: {avg_1h['co2_ppm']} ppm
+- 温度: {avg_1h['temperature']} ℃
+- 湿度: {avg_1h['humidity']} %
+
+【直近1時間の最大値】
+- CO2: {max_1h['co2_ppm']} ppm
+- 温度: {max_1h['temperature']} ℃
+- 湿度: {max_1h['humidity']} %
+
+【傾向】
+- CO2トレンド: {co2_trend}
+
+[アドバイスのルール]
+- 必ず日本語の文章を出力すること
+- 2〜4文程度の簡潔な文章とすること
+- 不安を煽りすぎず、自然な内容とすること
+- 必要に応じて換気、水分補給、休憩、室温調整などを提案すること
+""".strip()
+
+def handler(event, context):
+    device_id = "raspi-home-1"
+
+    # センサデータ取得 〜 プロンプト構築
+    items = get_recent_sensor_data(device_id=device_id, lookback_minutes=60)
+    
+    if not items:
+        return {
+            "ok": False,
+            "message": "センサーデータが取得できませんでした。デバイスの状態を確認してください。"
+        }
+    
+    summary = summarize_sensor_data(items)
+    prompt = build_prompt(summary)
+
+    print("summary:", summary)
+    print("prompt:", prompt)
+
+    # Bedrock 呼び出し
+    # advice = generate_advice_with_bedrock(prompt)
+
+    return {
+        "ok": True,
+        "summary": summary,
+        "prompt": prompt,
+    }
