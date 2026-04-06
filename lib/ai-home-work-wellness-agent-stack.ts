@@ -76,6 +76,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // Lambda
     // =====================================================
 
+    // IoT Core -> DynamoDB put_item
     const ingestFn = new lambda.Function(this, "IngestLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
@@ -85,7 +86,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         METRICS_TABLE_NAME: metricsTable.tableName,
       },
     });
-    
+
     metricsTable.grantWriteData(ingestFn);
 
     // // Lambda に Timestream 書き込み権限を付与
@@ -98,6 +99,30 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     //     resources: ["*"],
     //   })
     // );
+
+    // Bedrock invoke_model
+    const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset("services/wellness_agent_lambda"),
+      timeout: cdk.Duration.seconds(60),
+      environment: {
+        METRICS_TABLE_NAME: metricsTable.tableName,
+        DEVICE_ID: "raspi-home-1",
+        LOOKBACK_MINUTES: "60",
+        BEDROCK_REGION: this.region,
+        BEDROCK_MODEL_ID: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+      },
+    });
+
+    metricsTable.grantReadData(wellnessAgentFn);
+
+    wellnessAgentFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:InvokeModel"],
+        resources: ["*"], // 検証用
+      })
+    );
 
     // =====================================================
     // IoT Core
@@ -151,6 +176,10 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "IngestLambdaName", {
       value: ingestFn.functionName,
+    });
+
+    new cdk.CfnOutput(this, "WellnessAgentLambdaName", {
+      value: wellnessAgentFn.functionName,
     });
   }
 }

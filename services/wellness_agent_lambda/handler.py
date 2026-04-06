@@ -34,24 +34,24 @@ Agent に渡す入力イメージ
 import os
 import time
 import json
-from decimal import Decimal
 from typing import Any, Dict, List
 from statistics import mean
-from typing import Any, Dict, List
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
+TABLE_NAME = os.environ["METRICS_TABLE_NAME"]
+DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1") # デバイスID (PK)
+LOOKBACK_MINUTES = int(os.environ.get("LOOKBACK_MINUTES", "60")) # データ取得期間 (min)
+BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
+BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
+
 dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table(os.environ["METRICS_TABLE_NAME"])
+table = dynamodb.Table(TABLE_NAME)
 
 bedrock_runtime = boto3.client(
     "bedrock-runtime",
-    region_name=os.environ.get("BEDROCK_REGION", "ap-northeast-1"),
-)
-MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID",
-    "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    region_name=BEDROCK_REGION,
 )
 
 # 特定のデバイスID から送られてきた室内データを取得する
@@ -147,12 +147,6 @@ def summarize_sensor_data(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 def build_prompt(summary: dict) -> str:
-    if summary.get("count", 0) == 0:
-        return (
-            "室内環境データが取得できませんでした。"
-            "データ欠損時の短い案内を日本語で返してください。"
-        )
-
     latest = summary["latest"]
     avg_1h = summary["avg_1h"]
     max_1h = summary["max_1h"]
@@ -213,7 +207,7 @@ def generate_advice_with_bedrock(prompt: str) -> str:
         }
 
         response = bedrock_runtime.invoke_model(
-            modelId=MODEL_ID,
+            modelId=BEDROCK_MODEL_ID,
             body=json.dumps(body),
             contentType="application/json",
             accept="application/json",
@@ -245,10 +239,8 @@ def generate_advice_with_bedrock(prompt: str) -> str:
         return "アドバイス生成に失敗しました。"
 
 def handler(event, context):
-    device_id = "raspi-home-1"
-
     # センサデータ取得 〜 プロンプト構築
-    items = get_recent_sensor_data(device_id=device_id, lookback_minutes=60)
+    items = get_recent_sensor_data(device_id=DEVICE_ID, lookback_minutes=LOOKBACK_MINUTES)
 
     if not items:
         return {
@@ -256,17 +248,18 @@ def handler(event, context):
             "message": "センサーデータが取得できませんでした。デバイスの状態を確認してください。"
         }
     
+    # Bedrock 呼び出し
     summary = summarize_sensor_data(items)
     prompt = build_prompt(summary)
+    advice = generate_advice_with_bedrock(prompt)
 
     print("summary:", summary)
     print("prompt:", prompt)
-
-    # Bedrock 呼び出し
-    # advice = generate_advice_with_bedrock(prompt)
+    print("advice:", advice)
 
     return {
         "ok": True,
         "summary": summary,
-        "prompt": prompt,
+        #"prompt": prompt,
+        "advice": advice,
     }
