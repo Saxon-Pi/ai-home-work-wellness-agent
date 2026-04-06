@@ -33,15 +33,26 @@ Agent に渡す入力イメージ
 
 import os
 import time
+import json
 from decimal import Decimal
 from typing import Any, Dict, List
 from statistics import mean
 from typing import Any, Dict, List
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(os.environ["METRICS_TABLE_NAME"])
+
+bedrock_runtime = boto3.client(
+    "bedrock-runtime",
+    region_name=os.environ.get("BEDROCK_REGION", "ap-northeast-1"),
+)
+MODEL_ID = os.environ.get(
+    "BEDROCK_MODEL_ID",
+    "anthropic.claude-3-5-sonnet-20240620-v1:0"
+)
 
 # 特定のデバイスID から送られてきた室内データを取得する
 def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[Dict[str, Any]]:
@@ -181,12 +192,64 @@ def build_prompt(summary: dict) -> str:
 - 必要に応じて換気、水分補給、休憩、室温調整などを提案すること
 """.strip()
 
+# Bedrock による健康アドバイス生成
+def generate_advice_with_bedrock(prompt: str) -> str:
+    try:
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 300,
+            "temperature": 0.3,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ],
+                }
+            ],
+        }
+
+        response = bedrock_runtime.invoke_model(
+            modelId=MODEL_ID,
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json",
+        )
+
+        response_body = json.loads(response["body"].read())
+
+        text_blocks = response_body.get("content", [])
+        if not text_blocks:
+            return "アドバイス生成に失敗しました。"
+
+        advice = "".join(
+            block.get("text", "")
+            for block in text_blocks
+            if block.get("type") == "text"
+        ).strip()
+
+        if not advice:
+            return "アドバイス生成に失敗しました。"
+
+        return advice
+
+    except ClientError as e:
+        print("Bedrock ClientError:", str(e))
+        return "アドバイス生成に失敗しました。"
+
+    except Exception as e:
+        print("Bedrock UnexpectedError:", str(e))
+        return "アドバイス生成に失敗しました。"
+
 def handler(event, context):
     device_id = "raspi-home-1"
 
     # センサデータ取得 〜 プロンプト構築
     items = get_recent_sensor_data(device_id=device_id, lookback_minutes=60)
-    
+
     if not items:
         return {
             "ok": False,
