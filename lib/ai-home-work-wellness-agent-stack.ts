@@ -5,6 +5,8 @@ import * as iot from "aws-cdk-lib/aws-iot";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -111,7 +113,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         DEVICE_ID: "raspi-home-1",
         LOOKBACK_MINUTES: "60",
         BEDROCK_REGION: this.region,
-        BEDROCK_MODEL_ID: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
       },
     });
 
@@ -123,6 +125,17 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         resources: ["*"], // 検証用
       })
     );
+
+    // =====================================================
+    // EventBridge
+    // =====================================================
+
+    // AI Agent を定期実行
+    const wellnessAgentScheduleRule = new events.Rule(this, "WellnessAgentScheduleRule", {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(30)),
+    });
+
+    wellnessAgentScheduleRule.addTarget(new targets.LambdaFunction(wellnessAgentFn));
 
     // =====================================================
     // IoT Core
@@ -180,6 +193,10 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "WellnessAgentLambdaName", {
       value: wellnessAgentFn.functionName,
+    });
+
+    new cdk.CfnOutput(this, "WellnessAgentSchedule", {
+      value: "rate(30 minutes)",
     });
   }
 }
