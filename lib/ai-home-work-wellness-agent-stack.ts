@@ -72,9 +72,9 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     // =====================================================
     // DynamoDB
-    // Timestream の代替、device_id ごとの時系列データを保存する
     // =====================================================
 
+    // Timestream の代替、device_id ごとの時系列データを保存する
     const metricsTable = new dynamodb.Table(this, "RoomMetricsTable", {
       tableName: "room_metrics",
       partitionKey: {
@@ -84,6 +84,17 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       sortKey: {
         name: "timestamp_ms",
         type: dynamodb.AttributeType.NUMBER,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // 室内環境ステータス保存用テーブル（Agentを実行するかの判定に使用する）
+    const agentStateTable = new dynamodb.Table(this, "WellnessAgentStateTable", {
+      tableName: "wellness_agent_state",
+      partitionKey: {
+        name: "device_id",
+        type: dynamodb.AttributeType.STRING,
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -125,6 +136,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
+        AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
         DEVICE_ID: "raspi-home-1",
         LOOKBACK_MINUTES: "60",
         BEDROCK_REGION: this.region,
@@ -134,6 +146,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     });
 
     metricsTable.grantReadData(wellnessAgentFn);
+    agentStateTable.grantReadWriteData(wellnessAgentFn);
     lineBotSecret.grantRead(wellnessAgentFn);
 
     wellnessAgentFn.addToRolePolicy(
@@ -153,7 +166,10 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     // AI Agent を定期実行
     const wellnessAgentScheduleRule = new events.Rule(this, "WellnessAgentScheduleRule", {
-      schedule: events.Schedule.rate(cdk.Duration.minutes(30)),
+      schedule: events.Schedule.cron({
+        minute: "0/10",
+        hour: "0-14",
+      }),
     });
 
     wellnessAgentScheduleRule.addTarget(new targets.LambdaFunction(wellnessAgentFn));

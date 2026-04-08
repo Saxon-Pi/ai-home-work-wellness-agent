@@ -58,16 +58,26 @@ bedrock_runtime = boto3.client(
     region_name=BEDROCK_REGION,
 )
 
+line_config_cache = None
+
 # LINE 通知用トークンを Secrets Manager から取得する
 def get_line_config() -> Dict[str, str]:
+    global line_config_cache
+
+    # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
+    if line_config_cache is not None:
+        return line_config_cache
+
     response = secretsmanager.get_secret_value(SecretId=LINE_SECRET_NAME)
     secret_string = response["SecretString"]
     secret = json.loads(secret_string)
 
-    return {
+    line_config_cache = {
         "channel_access_token": secret["LINE_CHANNEL_ACCESS_TOKEN"],
         "to_user_id": secret["LINE_TO_USER_ID"],
     }
+
+    return line_config_cache
 
 # 特定のデバイスID から送られてきた室内データを取得する
 def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[Dict[str, Any]]:
@@ -169,7 +179,7 @@ def classify_environment(summary: Dict[str, Any]) -> Dict[str, str]:
     temp = latest["temperature"]
     humidity = latest["humidity"]
     
-    # 厚生労働省 の 事務所衛生基準規則 を参考に空気環境を分類
+    # 厚生労働省の事務所衛生基準規則などを参考に、暫定的な閾値で室内環境を分類
     # 要対応 (CO2:1000ppm以上, 温度:30℃以上、湿度:70%以上 のいずれかに該当する場合)
     if co2 >= 1000 or temp >= 30 or humidity >= 70:
         status = "alert"
@@ -187,7 +197,7 @@ def classify_environment(summary: Dict[str, Any]) -> Dict[str, str]:
         "label": label,
     }
 
-def build_prompt(summary: dict) -> str:
+def build_prompt(summary: Dict[str, Any]) -> str:
     latest = summary["latest"]
     avg_1h = summary["avg_1h"]
     max_1h = summary["max_1h"]
@@ -321,8 +331,12 @@ def send_line_message(message: str) -> None:
         method="POST",
     )
 
-    with urllib.request.urlopen(req) as res:
-        print("LINE response:", res.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req) as res:
+            print("LINE response:", res.read().decode("utf-8"))
+    except Exception as e:
+        print("LINE send error:", str(e))
+        raise
 
 def handler(event, context):
     # センサデータ取得 〜 プロンプト構築
@@ -365,6 +379,7 @@ def handler(event, context):
     return {
         "ok": True,
         "summary": summary,
+        "env_status": env_status,
         #"prompt": prompt,
         "advice": advice,
         "line_message": line_message,
