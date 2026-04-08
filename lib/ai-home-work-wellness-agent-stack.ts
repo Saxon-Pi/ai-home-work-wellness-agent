@@ -7,10 +7,25 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // =====================================================
+    // Secrets Manager
+    // =====================================================
+
+    // LINE 通知用トークン
+    const lineBotSecret = new secretsmanager.Secret(this, "LineBotSecret", {
+      secretName: "ai-home-work-wellness-agent/line-bot",
+      description: "LINE Messaging API credentials for wellness agent",
+      secretObjectValue: {
+        LINE_CHANNEL_ACCESS_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+        LINE_TO_USER_ID: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+      },
+    });
 
     // =====================================================
     // IAM Role
@@ -114,14 +129,20 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         LOOKBACK_MINUTES: "60",
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
+        LINE_SECRET_NAME: lineBotSecret.secretName,
       },
     });
 
     metricsTable.grantReadData(wellnessAgentFn);
+    lineBotSecret.grantRead(wellnessAgentFn);
 
     wellnessAgentFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["bedrock:InvokeModel"],
+        actions: [
+          "bedrock:InvokeModel",
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe",
+        ],
         resources: ["*"], // 検証用
       })
     );

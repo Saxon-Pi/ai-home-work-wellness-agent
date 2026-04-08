@@ -34,6 +34,7 @@ Agent に渡す入力イメージ
 import os
 import time
 import json
+import urllib.request
 from typing import Any, Dict, List
 from statistics import mean
 import boto3
@@ -49,10 +50,24 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 
+secretsmanager = boto3.client("secretsmanager")
+LINE_SECRET_NAME = os.environ["LINE_SECRET_NAME"]
+
 bedrock_runtime = boto3.client(
     "bedrock-runtime",
     region_name=BEDROCK_REGION,
 )
+
+# LINE 通知用トークンを Secrets Manager から取得する
+def get_line_config() -> Dict[str, str]:
+    response = secretsmanager.get_secret_value(SecretId=LINE_SECRET_NAME)
+    secret_string = response["SecretString"]
+    secret = json.loads(secret_string)
+
+    return {
+        "channel_access_token": secret["LINE_CHANNEL_ACCESS_TOKEN"],
+        "to_user_id": secret["LINE_TO_USER_ID"],
+    }
 
 # 特定のデバイスID から送られてきた室内データを取得する
 def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[Dict[str, Any]]:
@@ -238,6 +253,37 @@ def generate_advice_with_bedrock(prompt: str) -> str:
         print("Bedrock UnexpectedError:", str(e))
         return "アドバイス生成に失敗しました。"
 
+# LINE 通知を送信する
+def send_line_message(message: str) -> None:
+    line_config = get_line_config()
+
+    url = "https://api.line.me/v2/bot/message/push"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {line_config['channel_access_token']}",
+    }
+
+    body = {
+        "to": line_config["to_user_id"],
+        "messages": [
+            {
+                "type": "text",
+                "text": message,
+            }
+        ],
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        print("LINE response:", res.read().decode("utf-8"))
+
 def handler(event, context):
     # センサデータ取得 〜 プロンプト構築
     items = get_recent_sensor_data(device_id=DEVICE_ID, lookback_minutes=LOOKBACK_MINUTES)
@@ -253,8 +299,11 @@ def handler(event, context):
     prompt = build_prompt(summary)
     advice = generate_advice_with_bedrock(prompt)
 
+    # Agent の回答を LINE で通知
+    send_line_message(advice)
+
     print("summary:", summary)
-    print("prompt:", prompt)
+    #print("prompt:", prompt)
     print("advice:", advice)
 
     return {
