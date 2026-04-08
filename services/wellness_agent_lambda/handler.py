@@ -161,6 +161,32 @@ def summarize_sensor_data(items: List[Dict[str, Any]]) -> Dict[str, Any]:
       "co2_trend": co2_trend,
     }
 
+# 現在の状態をもとにステータスを分類する
+def classify_environment(summary: Dict[str, Any]) -> Dict[str, str]:
+    latest = summary["latest"]
+
+    co2 = latest["co2_ppm"]
+    temp = latest["temperature"]
+    humidity = latest["humidity"]
+    
+    # 厚生労働省 の 事務所衛生基準規則 を参考に空気環境を分類
+    # 要対応 (CO2:1000ppm以上, 温度:30℃以上、湿度:70%以上 のいずれかに該当する場合)
+    if co2 >= 1000 or temp >= 30 or humidity >= 70:
+        status = "alert"
+        label = "要対応"
+    # 注意 (CO2:800ppm以上, 温度:28℃以上、湿度:60%以上 のいずれかに該当する場合)
+    elif co2 >= 800 or temp >= 28 or humidity >= 60:
+        status = "warning"
+        label = "注意"
+    else:
+        status = "good"
+        label = "良好"
+
+    return {
+        "status": status,
+        "label": label,
+    }
+
 def build_prompt(summary: dict) -> str:
     latest = summary["latest"]
     avg_1h = summary["avg_1h"]
@@ -253,6 +279,20 @@ def generate_advice_with_bedrock(prompt: str) -> str:
         print("Bedrock UnexpectedError:", str(e))
         return "アドバイス生成に失敗しました。"
 
+# LINE メッセージを整える
+def format_line_message(summary: Dict[str, Any], status_label: str, advice: str) -> str:
+    latest = summary["latest"]
+
+    # Agent の回答の前に付与する室内環境情報
+    header = (
+        f"【室内環境：{status_label}】\n"
+        f"CO2 {latest['co2_ppm']} ppm / " # TODO: (正常)/(注意)/(要対応) の分類も付けたい
+        f"{latest['temperature']}℃ / "    # TODO: (正常)/(注意)/(要対応) の分類も付けたい
+        f"{latest['humidity']}%"          # TODO: (正常)/(注意)/(要対応) の分類も付けたい
+    )
+
+    return f"{header}\n\n{advice}"
+
 # LINE 通知を送信する
 def send_line_message(message: str) -> None:
     line_config = get_line_config()
@@ -286,29 +326,46 @@ def send_line_message(message: str) -> None:
 
 def handler(event, context):
     # センサデータ取得 〜 プロンプト構築
-    items = get_recent_sensor_data(device_id=DEVICE_ID, lookback_minutes=LOOKBACK_MINUTES)
+    items = get_recent_sensor_data(
+        device_id=DEVICE_ID,
+        lookback_minutes=LOOKBACK_MINUTES,
+    )
 
     if not items:
+        error_message = "センサーデータが取得できませんでした。デバイスの状態を確認してください。"
+        print("error:", error_message)
+
         return {
             "ok": False,
-            "message": "センサーデータが取得できませんでした。デバイスの状態を確認してください。"
+            "message": error_message,
         }
     
     # Bedrock 呼び出し
     summary = summarize_sensor_data(items)
+    env_status = classify_environment(summary)
+
     prompt = build_prompt(summary)
     advice = generate_advice_with_bedrock(prompt)
 
+    line_message = format_line_message(
+        summary=summary,
+        status_label=env_status["label"],
+        advice=advice,
+    )
+
     # Agent の回答を LINE で通知
-    send_line_message(advice)
+    send_line_message(line_message)
 
     print("summary:", summary)
+    print("env_status:", env_status)
     #print("prompt:", prompt)
     print("advice:", advice)
+    print("line_message:", line_message)
 
     return {
         "ok": True,
         "summary": summary,
         #"prompt": prompt,
         "advice": advice,
+        "line_message": line_message,
     }

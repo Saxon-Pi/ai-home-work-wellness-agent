@@ -19,7 +19,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     // LINE 通知用トークン
     const lineBotSecret = new secretsmanager.Secret(this, "LineBotSecret", {
-      secretName: "ai-home-work-wellness-agent/line-bot",
+      secretName: "ai-home-work-wellness-agent/line-chat-bot",
       description: "LINE Messaging API credentials for wellness agent",
       secretObjectValue: {
         LINE_CHANNEL_ACCESS_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
