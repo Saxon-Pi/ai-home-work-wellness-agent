@@ -41,14 +41,16 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-TABLE_NAME = os.environ["METRICS_TABLE_NAME"]
-DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1") # デバイスID (PK)
+TABLE_NAME = os.environ["METRICS_TABLE_NAME"]                    # センサデータテーブル
+AGENT_STATE_TABLE_NAME = os.environ["AGENT_STATE_TABLE_NAME"]    # ステータステーブル
+DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1")          # デバイスID (PK)
 LOOKBACK_MINUTES = int(os.environ.get("LOOKBACK_MINUTES", "60")) # データ取得期間 (min)
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
 BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
+agent_state_table = dynamodb.Table(AGENT_STATE_TABLE_NAME)
 
 secretsmanager = boto3.client("secretsmanager")
 LINE_SECRET_NAME = os.environ["LINE_SECRET_NAME"]
@@ -78,6 +80,48 @@ def get_line_config() -> Dict[str, str]:
     }
 
     return line_config_cache
+
+# 室内環境ステータスを保存する
+def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: int) -> None:
+    agent_state_table.put_item(
+        Item={
+            "device_id": device_id,
+            "last_status": status,                 # 室内環境ステータス
+            "last_message": message,               # LINEメッセージ
+            "last_notified_at_ms": notified_at_ms, # 通知時刻
+        }
+    )
+
+# 前回の室内環境ステータスを取得する
+def get_last_agent_state(device_id: str) -> Dict[str, Any] | None:
+    response = agent_state_table.get_item(
+        Key={"device_id": device_id}
+    )
+    return response.get("Item")
+
+# LINE 通知の要否を判定する (平常時に短期間の通知を避ける)
+def should_send_notification(
+    current_status: str,
+    last_state: Dict[str, Any] | None,
+    now_ms: int,
+) -> bool:
+    # 前回の室内環境ステータスが存在しなければ通知
+    if last_state is None:
+        return True
+
+    last_status = last_state.get("last_status")
+    last_notified_at_ms = int(float(last_state.get("last_notified_at_ms", 0)))
+
+    # 前回からステータスが変化したら通知
+    if current_status != last_status:
+        return True
+
+    # ステータスが "alert" なら 30分後に再通知
+    if current_status == "alert":
+        if now_ms - last_notified_at_ms >= 30 * 60 * 1000:
+            return True
+
+    return False
 
 # 特定のデバイスID から送られてきた室内データを取得する
 def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[Dict[str, Any]]:
@@ -135,7 +179,7 @@ def summarize_sensor_data(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     temp_values = [float(item["temperature"]) for item in items]
     humidity_values = [float(item["humidity"]) for item in items]
 
-    # CO2 のトレンド分析用情報の作成
+    # CO2 のトレンド分類用情報の作成
     first_co2 = co2_values[0]   # 取得期間の最初の CO2
     latest_co2 = co2_values[-1] # 取得期間最後（最新）の CO2
 
@@ -339,12 +383,13 @@ def send_line_message(message: str) -> None:
         raise
 
 def handler(event, context):
-    # センサデータ取得 〜 プロンプト構築
+    # センサデータ取得
     items = get_recent_sensor_data(
         device_id=DEVICE_ID,
         lookback_minutes=LOOKBACK_MINUTES,
     )
 
+    # センサデータが取得できない場合はエラー終了
     if not items:
         error_message = "センサーデータが取得できませんでした。デバイスの状態を確認してください。"
         print("error:", error_message)
@@ -354,21 +399,47 @@ def handler(event, context):
             "message": error_message,
         }
     
-    # Bedrock 呼び出し
+    # センサデータの整理、CO2トレンドの分類 (下降/安定/上昇)
     summary = summarize_sensor_data(items)
+    # 室内環境ステータスの分類 (良好/注意/要対応)
     env_status = classify_environment(summary)
 
+    # プロンプト構築
     prompt = build_prompt(summary)
+
+    # AI Agent によるアドバイス生成
     advice = generate_advice_with_bedrock(prompt)
 
+    # アドバイスを基に LINE メッセージを作成
     line_message = format_line_message(
         summary=summary,
         status_label=env_status["label"],
         advice=advice,
     )
 
-    # Agent の回答を LINE で通知
-    send_line_message(line_message)
+    # 前回の室内環境ステータスと時刻から通知可否を判定（平常時に短期間の通知を防止）
+    now_ms = int(time.time() * 1000)
+    last_state = get_last_agent_state(DEVICE_ID)
+
+    should_send = should_send_notification(
+        current_status=env_status["status"],
+        last_state=last_state,
+        now_ms=now_ms,
+    )
+
+    # 通知OK ならメッセージを LINE に通知
+    if should_send:
+        send_line_message(line_message)
+        # 通知内容と室内環境ステータスを保存
+        save_agent_state(
+            device_id=DEVICE_ID,
+            status=env_status["status"], # 室内環境ステータス
+            message=line_message,        # LINEメッセージ
+            notified_at_ms=now_ms,       # 通知時刻
+        )
+        print("notification_sent:", True)
+    else:
+        print("notification_sent:", False)
 
     print("summary:", summary)
     print("env_status:", env_status)
@@ -383,4 +454,5 @@ def handler(event, context):
         #"prompt": prompt,
         "advice": advice,
         "line_message": line_message,
+        "notification_sent": should_send,
     }
