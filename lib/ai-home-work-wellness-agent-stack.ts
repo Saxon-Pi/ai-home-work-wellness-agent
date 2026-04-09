@@ -164,15 +164,21 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // EventBridge
     // =====================================================
 
-    // AI Agent を定期実行
-    const wellnessAgentScheduleRule = new events.Rule(this, "WellnessAgentScheduleRule", {
+    // AI Agent を定期実行 (JST: 9:00 ~ 23:00、10分間隔)
+    const wellnessAgentScheduleRuleDay = new events.Rule(this, "WellnessAgentScheduleRuleDay", {
       schedule: events.Schedule.cron({
         minute: "0/10",
-        hour: "0-14",
+        hour: "0-13",
       }),
     });
-
-    wellnessAgentScheduleRule.addTarget(new targets.LambdaFunction(wellnessAgentFn));
+    const wellnessAgentScheduleRuleLast = new events.Rule(this, "WellnessAgentScheduleRuleLast", {
+      schedule: events.Schedule.cron({
+        minute: "0",
+        hour: "14",
+      }),
+    });
+    wellnessAgentScheduleRuleDay.addTarget(new targets.LambdaFunction(wellnessAgentFn));
+    wellnessAgentScheduleRuleLast.addTarget(new targets.LambdaFunction(wellnessAgentFn));
 
     // =====================================================
     // IoT Core

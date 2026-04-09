@@ -2,13 +2,13 @@
 DynamoDB → Lambda → AI Agent
 DynamoDB に登録された 直近1時間の室内データ を AI Agent に渡す
 
-Agentに渡すデータは以下
+Agentに渡すデータは以下: 
 - CO2 / 温度 / 湿度 の現在値
 - CO2 / 温度 / 湿度 の平均値
 - CO2 / 温度 / 湿度 の最大値
 - CO2 の上昇傾向
 
-Agent に渡す入力イメージ
+Agent に渡す入力イメージ: 
 {
   "count": 720,
   "latest": {
@@ -29,6 +29,20 @@ Agent に渡す入力イメージ
   },
   "co2_trend": "rising"
 }
+
+室内環境ステータス分類:
+厚生労働省の事務所衛生基準規則などを参考に、暫定的な閾値で室内環境を分類している
+- 要対応 (CO2:1000ppm以上, 温度:30℃以上、湿度:70%以上 のいずれかに該当する場合)
+- 注意   (CO2:800ppm以上, 温度:28℃以上、湿度:60%以上 のいずれかに該当する場合)
+- 良好   (上記に当てはまらない場合）
+
+LINE 通知条件: 
+EventBridge により 9:00 ~ 23:00 の間に 10分間隔で Agent Lambdaが実行される
+そのうち、以下の通知ルールに当てはまれば LINEメッセージを送信する
+- 前回の通知情報が存在しない場合
+- 室内環境ステータスが変化した場合（例：注意 → 要対応、要対応 → 良好、など）
+- 室内環境ステータスが「要対応」のまま 30分経過した場合
+- ステータスが「良好」、「注意」のまま 1時間経過した場合
 """
 
 import os
@@ -81,7 +95,7 @@ def get_line_config() -> Dict[str, str]:
 
     return line_config_cache
 
-# 室内環境ステータスを保存する
+# 前回の通知情報（室内環境ステータスなど）を保存する
 def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: int) -> None:
     agent_state_table.put_item(
         Item={
@@ -92,8 +106,9 @@ def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: 
         }
     )
 
-# 前回の室内環境ステータスを取得する
+# 前回の通知情報（室内環境ステータスなど）を取得する
 def get_last_agent_state(device_id: str) -> Dict[str, Any] | None:
+    # 主キー完全一致で 1レコード だけ取得
     response = agent_state_table.get_item(
         Key={"device_id": device_id}
     )
@@ -115,13 +130,15 @@ def should_send_notification(
     # 前回からステータスが変化したら通知
     if current_status != last_status:
         return True
+    
+    elapsed_ms = now_ms - last_notified_at_ms
 
-    # ステータスが "alert" なら 30分後に再通知
+    # ステータスが "alert" なら 30分ごとに再通知
     if current_status == "alert":
-        if now_ms - last_notified_at_ms >= 30 * 60 * 1000:
-            return True
-
-    return False
+        return elapsed_ms >= 30 * 60 * 1000
+    
+    # ステータスが "good" / "warning" なら 1時間ごとに再通知
+    return elapsed_ms >= 60 * 60 * 1000
 
 # 特定のデバイスID から送られてきた室内データを取得する
 def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[Dict[str, Any]]:
