@@ -5,10 +5,27 @@ import * as iot from "aws-cdk-lib/aws-iot";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // =====================================================
+    // Secrets Manager
+    // =====================================================
+
+    // LINE 通知用トークン
+    const lineBotSecret = new secretsmanager.Secret(this, "LineBotSecret", {
+      secretName: "ai-home-work-wellness-agent/line-chat-bot",
+      description: "LINE Messaging API credentials for wellness agent",
+      secretObjectValue: {
+        LINE_CHANNEL_ACCESS_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+        LINE_TO_USER_ID: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+      },
+    });
 
     // =====================================================
     // IAM Role
@@ -55,9 +72,9 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     // =====================================================
     // DynamoDB
-    // Timestream の代替、device_id ごとの時系列データを保存する
     // =====================================================
 
+    // Timestream の代替、device_id ごとの時系列データを保存する
     const metricsTable = new dynamodb.Table(this, "RoomMetricsTable", {
       tableName: "room_metrics",
       partitionKey: {
@@ -72,10 +89,22 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // 室内環境ステータス保存用テーブル（Agentを実行するかの判定に使用する）
+    const agentStateTable = new dynamodb.Table(this, "WellnessAgentStateTable", {
+      tableName: "wellness_agent_state",
+      partitionKey: {
+        name: "device_id",
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     // =====================================================
     // Lambda
     // =====================================================
 
+    // IoT Core -> DynamoDB put_item
     const ingestFn = new lambda.Function(this, "IngestLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
@@ -85,7 +114,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         METRICS_TABLE_NAME: metricsTable.tableName,
       },
     });
-    
+
     metricsTable.grantWriteData(ingestFn);
 
     // // Lambda に Timestream 書き込み権限を付与
@@ -98,6 +127,58 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     //     resources: ["*"],
     //   })
     // );
+
+    // Bedrock invoke_model
+    const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset("services/wellness_agent_lambda"),
+      timeout: cdk.Duration.seconds(60),
+      environment: {
+        METRICS_TABLE_NAME: metricsTable.tableName,
+        AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
+        DEVICE_ID: "raspi-home-1",
+        LOOKBACK_MINUTES: "60",
+        BEDROCK_REGION: this.region,
+        BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
+        LINE_SECRET_NAME: lineBotSecret.secretName,
+      },
+    });
+
+    metricsTable.grantReadData(wellnessAgentFn);
+    agentStateTable.grantReadWriteData(wellnessAgentFn);
+    lineBotSecret.grantRead(wellnessAgentFn);
+
+    wellnessAgentFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "bedrock:InvokeModel",
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe",
+        ],
+        resources: ["*"], // 検証用
+      })
+    );
+
+    // =====================================================
+    // EventBridge
+    // =====================================================
+
+    // AI Agent を定期実行 (JST: 9:00 ~ 23:00、10分間隔)
+    const wellnessAgentScheduleRuleDay = new events.Rule(this, "WellnessAgentScheduleRuleDay", {
+      schedule: events.Schedule.cron({
+        minute: "0/10",
+        hour: "0-13",
+      }),
+    });
+    const wellnessAgentScheduleRuleLast = new events.Rule(this, "WellnessAgentScheduleRuleLast", {
+      schedule: events.Schedule.cron({
+        minute: "0",
+        hour: "14",
+      }),
+    });
+    wellnessAgentScheduleRuleDay.addTarget(new targets.LambdaFunction(wellnessAgentFn));
+    wellnessAgentScheduleRuleLast.addTarget(new targets.LambdaFunction(wellnessAgentFn));
 
     // =====================================================
     // IoT Core
@@ -151,6 +232,14 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "IngestLambdaName", {
       value: ingestFn.functionName,
+    });
+
+    new cdk.CfnOutput(this, "WellnessAgentLambdaName", {
+      value: wellnessAgentFn.functionName,
+    });
+
+    new cdk.CfnOutput(this, "WellnessAgentSchedule", {
+      value: "rate(30 minutes)",
     });
   }
 }
