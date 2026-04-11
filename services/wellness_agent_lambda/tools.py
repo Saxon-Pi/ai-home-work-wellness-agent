@@ -1,12 +1,12 @@
 """
-Strands Agent がデータ取得やLINE通知をするために使用するツール群
+Strands Agent がデータ取得や LINE 通知をするために使用するツール群
 """
 
 from typing import Any, Dict
 from strands import tool
 
 # 既存の Lambda 関数から関数をインポート
-from handler import (
+from services.wellness_agent_lambda.core import (
     DEVICE_ID,
     LOOKBACK_MINUTES,       # データ取得期間 (デフォルトは1時間に設定)
     get_recent_sensor_data, # 特定のデバイスID から送られてきた、直近1時間の室内環境データを取得する関数
