@@ -161,10 +161,19 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: [
           "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ],
+        resources: ["*"], // TODO: 権限絞る
+      })
+    );
+
+    wellnessAgentFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
           "aws-marketplace:ViewSubscriptions",
           "aws-marketplace:Subscribe",
         ],
-        resources: ["*"], // 検証用
+        resources: ["*"],
       })
     );
 
