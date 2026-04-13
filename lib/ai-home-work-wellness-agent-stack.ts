@@ -128,12 +128,20 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     //   })
     // );
 
-    // Bedrock invoke_model
+    // Strands Agent 用の Lambda layer
+    const strandsLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "StrandsAgentsLayer",
+      "arn:aws:lambda:ap-northeast-1:856699698935:layer:strands-agents-py3_12-x86_64:1"
+    );
+
+    // Strands Agent
     const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset("services/wellness_agent_lambda"),
       timeout: cdk.Duration.seconds(60),
+      layers: [strandsLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
         AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
