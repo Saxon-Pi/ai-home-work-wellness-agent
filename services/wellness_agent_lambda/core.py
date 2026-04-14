@@ -286,3 +286,33 @@ def send_line_message(message: str) -> None:
     except Exception as e:
         print("LINE send error:", str(e))
         raise
+
+# LINE のチャットに応答する
+def reply_line_message(reply_token: str, message: str) -> None:
+    line_config = get_line_config()
+
+    url = "https://api.line.me/v2/bot/message/reply"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {line_config['channel_access_token']}",
+    }
+    
+    body = {
+        "replyToken": reply_token,
+        "messages": [
+            {
+                "type": "text",
+                "text": message,
+            }
+        ],
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        print("LINE reply response:", res.read().decode("utf-8"))
