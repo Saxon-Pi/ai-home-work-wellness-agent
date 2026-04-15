@@ -139,7 +139,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
-      code: lambda.Code.fromAsset("services/wellness_agent_lambda"),
+      code: lambda.Code.fromAsset("services/wellness_agent"),
       timeout: cdk.Duration.seconds(60),
       layers: [strandsLayer],
       environment: {

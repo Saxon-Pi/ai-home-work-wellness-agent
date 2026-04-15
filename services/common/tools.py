@@ -6,7 +6,7 @@ from typing import Any, Dict
 from strands import tool
 
 # 既存の Lambda 関数から関数をインポート
-from core import (
+from services.common.core import (
     DEVICE_ID,        # デバイスID
     LOOKBACK_MINUTES, # データ取得期間 (デフォルトは1時間)
     # 直近1時間の室内環境サマリを取得する関数 (最新値、平均値、最大値、CO2トレンド、環境ステータス)
@@ -15,6 +15,8 @@ from core import (
     format_line_message,
     # LINE メッセージを送信する関数
     send_line_message,
+    # LINE のチャットに応答する関数
+    reply_line_message,
 )
 
 # 直近1時間の室内環境データを取得し、要約した結果を返すツール
@@ -58,3 +60,9 @@ def format_line_message_tool(advice: str) -> Dict[str, Any]:
 def send_line_message_tool(message: str) -> str:
     send_line_message(message)
     return "LINEにメッセージを送信しました。"
+
+# LINE に返信するツール (replyToken)
+@tool
+def reply_line_message_tool(reply_token: str, message: str) -> str:
+    reply_line_message(reply_token, message)
+    return "LINEに返信しました。"
