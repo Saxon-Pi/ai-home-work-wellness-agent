@@ -69,10 +69,9 @@ def handler(event, context):
             "notification_sent": False,
         }
     
-    # TODO: LINEでの双方向コミュニケーションを実装する際に可変にする
-    # イメージ：user_request = line_message_text
+    # 定期実行のためリクエストは固定
     user_request = (
-        "現在の室内環境を確認し、必要なら健康アドバイスを作成して、"
+        "現在の室内環境を確認し、必要に応じて健康アドバイスを作成して、"
         "LINEに送信してください。"
     )
 
