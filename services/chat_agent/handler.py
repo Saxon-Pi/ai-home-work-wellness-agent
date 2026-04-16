@@ -9,7 +9,7 @@ LINEユーザー
 """
 
 import json
-from chat_agent import chat_agent
+from agent import chat_agent # services.chat_agent.agent の chat_agent
 
 def handler(event, context):
     print("event:", json.dumps(event, ensure_ascii=False))

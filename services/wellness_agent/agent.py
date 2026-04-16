@@ -13,7 +13,7 @@ from strands import Agent
 from strands.models import BedrockModel
 
 # Agent が使用するツール
-from services.common.tools import (
+from tools import (
     # 直近1時間の室内環境データのサマリーを作成するツール (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary_tool,
     # 室内環境サマリと Agent が生成したアドバイスを組み合わせて、LINE メッセージを作成するツール
@@ -55,7 +55,7 @@ SYSTEM_PROMPT = """
 - 数値の異常（CO2や温度など）がある場合は優先的に言及すること
 """
 
-agent = Agent(
+wellness_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,

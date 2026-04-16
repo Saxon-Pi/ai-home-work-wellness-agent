@@ -130,6 +130,13 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     //   })
     // );
 
+    // Agent の tool に使用する共通ロジックレイヤ (core.py)
+    const commonLayer = new lambda.LayerVersion(this, "CommonPythonLayer", {
+      code: lambda.Code.fromAsset("layer"),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      description: "Shared common python modules",
+    });
+
     // Strands Agent 用の Lambda layer
     const strandsLayer = lambda.LayerVersion.fromLayerVersionArn(
       this,
@@ -137,13 +144,13 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       "arn:aws:lambda:ap-northeast-1:856699698935:layer:strands-agents-py3_12-x86_64:1"
     );
 
-    // Strands Agent
+    // Wellness Agent (Strands Agent)
     const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset("services/wellness_agent"),
       timeout: cdk.Duration.seconds(60),
-      layers: [strandsLayer],
+      layers: [strandsLayer, commonLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
         AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
@@ -179,13 +186,13 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       })
     );
 
-    // LINE チャット応答 Agent
+    // Chat Agent (Strands Agent)
     const lineChatHandlerFn = new lambda.Function(this, "LineChatHandlerLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset("services/chat_agent"),
       timeout: cdk.Duration.seconds(60),
-      layers: [strandsLayer],
+      layers: [strandsLayer, commonLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
         AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
@@ -225,7 +232,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // API Gateway
     // =====================================================
 
-    // LINE の Webhook 用 API Gateway
+    // LINE の Webhook 用 API Gateway (チャット応答Agent用)
     const lineWebhookApi = new apigwv2.HttpApi(this, "LineWebhookApi", {
       apiName: "line-webhook-api",
     });
