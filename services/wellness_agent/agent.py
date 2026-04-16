@@ -55,7 +55,7 @@ SYSTEM_PROMPT = """
 - 数値の異常（CO2や温度など）がある場合は優先的に言及すること
 """
 
-agent = Agent(
+wellness_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,

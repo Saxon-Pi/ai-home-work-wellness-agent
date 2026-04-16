@@ -8,6 +8,8 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
+import * as integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -128,6 +130,13 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     //   })
     // );
 
+    // Agent の tool に使用する共通ロジックレイヤ (core.py)
+    const commonLayer = new lambda.LayerVersion(this, "CommonPythonLayer", {
+      code: lambda.Code.fromAsset("layer"),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      description: "Shared common python modules",
+    });
+
     // Strands Agent 用の Lambda layer
     const strandsLayer = lambda.LayerVersion.fromLayerVersionArn(
       this,
@@ -135,13 +144,13 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       "arn:aws:lambda:ap-northeast-1:856699698935:layer:strands-agents-py3_12-x86_64:1"
     );
 
-    // Strands Agent
+    // Wellness Agent (Strands Agent)
     const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
-      code: lambda.Code.fromAsset("services/wellness_agent_lambda"),
+      code: lambda.Code.fromAsset("services/wellness_agent"),
       timeout: cdk.Duration.seconds(60),
-      layers: [strandsLayer],
+      layers: [strandsLayer, commonLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
         AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
@@ -176,6 +185,66 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         resources: ["*"],
       })
     );
+
+    // Chat Agent (Strands Agent)
+    const lineChatHandlerFn = new lambda.Function(this, "LineChatHandlerLambda", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset("services/chat_agent"),
+      timeout: cdk.Duration.seconds(60),
+      layers: [strandsLayer, commonLayer],
+      environment: {
+        METRICS_TABLE_NAME: metricsTable.tableName,
+        AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
+        DEVICE_ID: "raspi-home-1",
+        LOOKBACK_MINUTES: "60",
+        BEDROCK_REGION: this.region,
+        BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
+        LINE_SECRET_NAME: lineBotSecret.secretName,
+      },
+    });
+
+    metricsTable.grantReadData(lineChatHandlerFn);
+    agentStateTable.grantReadWriteData(lineChatHandlerFn);
+    lineBotSecret.grantRead(lineChatHandlerFn);
+
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ],
+        resources: ["*"], // TODO: 権限絞る
+      })
+    );
+
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    // =====================================================
+    // API Gateway
+    // =====================================================
+
+    // LINE の Webhook 用 API Gateway (チャット応答Agent用)
+    const lineWebhookApi = new apigwv2.HttpApi(this, "LineWebhookApi", {
+      apiName: "line-webhook-api",
+    });
+
+    lineWebhookApi.addRoutes({
+      path: "/webhook",
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new integrations.HttpLambdaIntegration(
+        "LineWebhookIntegration",
+        lineChatHandlerFn
+      ),
+    });
 
     // =====================================================
     // EventBridge
@@ -257,6 +326,10 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "WellnessAgentSchedule", {
       value: "rate(30 minutes)",
+    });
+
+    new cdk.CfnOutput(this, "LineWebhookUrl", {
+      value: `${lineWebhookApi.apiEndpoint}/webhook`,
     });
   }
 }
