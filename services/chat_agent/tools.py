@@ -28,4 +28,5 @@ def get_environment_summary_tool() -> Dict[str, Any]:
 @tool
 def reply_line_message_tool(reply_token: str, message: str) -> str:
     reply_line_message(reply_token, message)
+    print("reply_message:", message)
     return "LINEに返信しました。"
