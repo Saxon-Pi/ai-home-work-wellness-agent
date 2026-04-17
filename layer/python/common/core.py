@@ -7,7 +7,8 @@ import os
 import time
 import json
 import urllib.request
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
 from statistics import mean
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -33,6 +34,8 @@ bedrock_runtime = boto3.client(
 )
 
 line_config_cache = None
+
+JST = timezone(timedelta(hours=9))
 
 # LINE 通知用トークンを Secrets Manager から取得する
 def get_line_config() -> Dict[str, str]:
@@ -316,3 +319,53 @@ def reply_line_message(reply_token: str, message: str) -> None:
 
     with urllib.request.urlopen(req) as res:
         print("LINE reply response:", res.read().decode("utf-8"))
+
+# Google Calendar API の start/end を datetime に変換する
+def parse_google_calendar_datetime(value: Dict[str, str]) -> Optional[datetime]:
+    # dateTime (開始時刻・終了時刻が明確にあるイベント) がある場合はそちらを優先
+    if "dateTime" in value:
+        dt_str = value["dateTime"]
+        return datetime.fromisoformat(dt_str)
+
+    # 終日イベントの場合は JST 00:00 として扱う
+    if "date" in value:
+        date_str = value["date"]
+        return datetime.fromisoformat(date_str).replace(tzinfo=JST)
+
+    return None
+
+# datetime を JST の ISO 8601 文字列に変換する
+# 例: datetime(2026, 4, 17, 13, 0, tzinfo=JST) -> 2026-04-17T13:00:00+09:00
+def to_isoformat_jst(dt: Optional[datetime]) -> Optional[str]:
+    if dt is None:
+        return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return dt.astimezone(JST).isoformat()
+
+# Google Calendar API のイベントを Agent 用の共通形式に整形する
+def normalize_calendar_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    start_dt = parse_google_calendar_datetime(event.get("start", {}))
+    end_dt = parse_google_calendar_datetime(event.get("end", {}))
+
+    if start_dt is None:
+        return None
+    
+    """
+    出力イメージ：
+    {
+            "summary": "顧客MTG",
+            "start": "2026-04-17T13:00:00+09:00",
+            "end": "2026-04-17T14:00:00+09:00"
+        }
+    """
+
+    return {
+        "summary": event.get("summary", "予定"),
+        "start": to_isoformat_jst(start_dt),
+        "end": to_isoformat_jst(end_dt),
+    }
+
+# 取得した Google Calendar イベント一覧から、Agent に渡すスケジュールサマリを作成する
