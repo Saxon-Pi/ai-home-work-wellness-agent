@@ -6,6 +6,7 @@
 import os
 import time
 import json
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
@@ -25,36 +26,23 @@ dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 agent_state_table = dynamodb.Table(AGENT_STATE_TABLE_NAME)
 
-secretsmanager = boto3.client("secretsmanager")
-LINE_SECRET_NAME = os.environ["LINE_SECRET_NAME"]
-
 bedrock_runtime = boto3.client(
     "bedrock-runtime",
     region_name=BEDROCK_REGION,
 )
 
-line_config_cache = None
-
 JST = timezone(timedelta(hours=9))
 
-# LINE 通知用トークンを Secrets Manager から取得する
-def get_line_config() -> Dict[str, str]:
-    global line_config_cache
+# シークレットのキャッシュ
+secretsmanager = boto3.client("secretsmanager")
+LINE_SECRET_NAME = os.environ["LINE_SECRET_NAME"]
+GOOGLE_CALENDAR_SECRET_NAME = os.environ["GOOGLE_CALENDAR_SECRET_NAME"]
+line_config_cache = None
+google_oauth_cache: Optional[Dict[str, str]] = None
 
-    # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
-    if line_config_cache is not None:
-        return line_config_cache
-
-    response = secretsmanager.get_secret_value(SecretId=LINE_SECRET_NAME)
-    secret_string = response["SecretString"]
-    secret = json.loads(secret_string)
-
-    line_config_cache = {
-        "channel_access_token": secret["LINE_CHANNEL_ACCESS_TOKEN"],
-        "to_user_id": secret["LINE_TO_USER_ID"],
-    }
-
-    return line_config_cache
+# =====================================================
+# 室内環境データの取得
+# =====================================================
 
 # 前回の通知情報（室内環境ステータスなど）を保存する
 def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: int) -> None:
@@ -74,32 +62,6 @@ def get_last_agent_state(device_id: str) -> Dict[str, Any] | None:
         Key={"device_id": device_id}
     )
     return response.get("Item")
-
-# LINE 通知の要否を判定する (平常時に短期間の通知を避ける)
-def should_send_notification(
-    current_status: str,
-    last_state: Dict[str, Any] | None,
-    now_ms: int,
-) -> bool:
-    # 前回の室内環境ステータスが存在しなければ通知
-    if last_state is None:
-        return True
-
-    last_status = last_state.get("last_status")
-    last_notified_at_ms = int(float(last_state.get("last_notified_at_ms", 0)))
-
-    # 前回からステータスが変化したら通知
-    if current_status != last_status:
-        return True
-    
-    elapsed_ms = now_ms - last_notified_at_ms
-
-    # ステータスが "alert" なら 30分ごとに再通知
-    if current_status == "alert":
-        return elapsed_ms >= 30 * 60 * 1000
-    
-    # ステータスが "good" / "warning" なら 1時間ごとに再通知
-    return elapsed_ms >= 60 * 60 * 1000
 
 # 特定のデバイスID から送られてきた室内データを取得する
 def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[Dict[str, Any]]:
@@ -241,6 +203,55 @@ def get_environment_summary(device_id: str, lookback_minutes: int = 60) -> Dict[
         "env_status": env_status,
     }
 
+# =====================================================
+# LINE 通知
+# =====================================================
+
+# LINE 通知用トークンを Secrets Manager から取得する
+def get_line_config() -> Dict[str, str]:
+    global line_config_cache
+
+    # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
+    if line_config_cache is not None:
+        return line_config_cache
+
+    response = secretsmanager.get_secret_value(SecretId=LINE_SECRET_NAME)
+    secret_string = response["SecretString"]
+    secret = json.loads(secret_string)
+
+    line_config_cache = {
+        "channel_access_token": secret["LINE_CHANNEL_ACCESS_TOKEN"],
+        "to_user_id": secret["LINE_TO_USER_ID"],
+    }
+
+    return line_config_cache
+
+# LINE 通知の要否を判定する (平常時に短期間の通知を避ける)
+def should_send_notification(
+    current_status: str,
+    last_state: Dict[str, Any] | None,
+    now_ms: int,
+) -> bool:
+    # 前回の室内環境ステータスが存在しなければ通知
+    if last_state is None:
+        return True
+
+    last_status = last_state.get("last_status")
+    last_notified_at_ms = int(float(last_state.get("last_notified_at_ms", 0)))
+
+    # 前回からステータスが変化したら通知
+    if current_status != last_status:
+        return True
+    
+    elapsed_ms = now_ms - last_notified_at_ms
+
+    # ステータスが "alert" なら 30分ごとに再通知
+    if current_status == "alert":
+        return elapsed_ms >= 30 * 60 * 1000
+    
+    # ステータスが "good" / "warning" なら 1時間ごとに再通知
+    return elapsed_ms >= 60 * 60 * 1000
+
 # LINE メッセージを整える
 def format_line_message(summary: Dict[str, Any], status_label: str, advice: str) -> str:
     latest = summary["latest"]
@@ -320,6 +331,60 @@ def reply_line_message(reply_token: str, message: str) -> None:
     with urllib.request.urlopen(req) as res:
         print("LINE reply response:", res.read().decode("utf-8"))
 
+# =====================================================
+# Google Calendar 連携
+# =====================================================
+
+# Google OAuth 設定を Secrets Manager から取得する
+def get_google_calendar_oauth_config() -> Dict[str, str]:
+    global google_oauth_cache
+
+    # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
+    if google_oauth_cache is not None:
+        return google_oauth_cache
+
+    response = secretsmanager.get_secret_value(SecretId=GOOGLE_CALENDAR_SECRET_NAME)
+    secret = json.loads(response["SecretString"])
+
+    google_oauth_cache = {
+        "client_id": secret["GOOGLE_CLIENT_ID"],
+        "client_secret": secret["GOOGLE_CLIENT_SECRET"],
+        "refresh_token": secret["GOOGLE_REFRESH_TOKEN"],
+    }
+
+    return google_oauth_cache
+
+# refresh token を使って Google OAuth の access_token を取得する
+def get_google_access_token() -> str:
+    oauth = get_google_calendar_oauth_config()
+
+    token_url = "https://oauth2.googleapis.com/token"
+
+    payload = urllib.parse.urlencode(
+        {
+            "client_id": oauth["client_id"],
+            "client_secret": oauth["client_secret"],
+            "refresh_token": oauth["refresh_token"],
+            "grant_type": "refresh_token",
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        token_url,
+        data=payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        token_response = json.loads(res.read().decode("utf-8"))
+
+    access_token = token_response.get("access_token")
+    if not access_token:
+        raise RuntimeError("Google access token の取得に失敗しました")
+
+    return access_token
+
 # Google Calendar API の start/end を datetime に変換する
 def parse_google_calendar_datetime(value: Dict[str, str]) -> Optional[datetime]:
     # dateTime (開始時刻・終了時刻が明確にあるイベント) がある場合はそちらを優先
@@ -369,7 +434,8 @@ def normalize_calendar_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
     }
 
 # 取得した Google Calendar イベント一覧から、Agent に渡すイベントサマリを作成する
-# 出力は「直近1時間にイベントが入っているか」のフラグと、今後のイベント一覧 (最大3件) 
+# 出力は「直近1時間以内にイベントがあるか」のフラグと、
+# 今後のイベント一覧（開始時刻が近い順で最大3件）
 def get_calendar_context_from_events(
     events: List[Dict[str, Any]],
     now: Optional[datetime] = None,
@@ -377,7 +443,7 @@ def get_calendar_context_from_events(
     if now is None:
         now = datetime.now(JST)
 
-    parsed_events: List[Dict[str, Any]] = []   # API から取得したイベント一覧 (整形済)
+    parsed_events: List[Dict[str, Any]] = []   # APIから取得したイベント一覧（整形済み、start_dt付き）
     upcoming_events: List[Dict[str, Any]] = [] # 最終的に Agent に渡す今後のイベント一覧（最大3件）
 
     # Google Calendar API から取得したイベントを個別に整形
@@ -398,7 +464,7 @@ def get_calendar_context_from_events(
 
     # 現在以降のイベントのみを抽出
     future_events = [e for e in parsed_events if e["start_dt"] >= now]
-    future_events.sort(key=lambda x: x["start_dt"])
+    future_events.sort(key=lambda e: e["start_dt"])
 
     # 次のイベントを最大3件抽出
     next_three = future_events[:3]
