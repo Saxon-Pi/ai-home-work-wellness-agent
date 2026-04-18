@@ -19,6 +19,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // Secrets Manager
     // =====================================================
 
+    // デプロイ → コンソールからシークレットの登録 が必要
     // LINE 通知用トークン
     const lineBotSecret = new secretsmanager.Secret(this, "LineBotSecret", {
       secretName: "ai-home-work-wellness-agent/line-chat-bot",
@@ -26,6 +27,17 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       secretObjectValue: {
         LINE_CHANNEL_ACCESS_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
         LINE_TO_USER_ID: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+      },
+    });
+
+    // Google Calendar 用トークン
+    const googleCalendarSecret = new secretsmanager.Secret(this, "GoogleCalendarOAuthSecret", {
+      secretName: "ai-home-work-wellness-agent/google-calendar-oauth",
+      description: "Google Calendar OAuth credentials for chat agent",
+      secretObjectValue: {
+        GOOGLE_CLIENT_ID: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+        GOOGLE_CLIENT_SECRET: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+        GOOGLE_REFRESH_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
       },
     });
 
@@ -201,12 +213,14 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
+        GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
       },
     });
 
     metricsTable.grantReadData(lineChatHandlerFn);
     agentStateTable.grantReadWriteData(lineChatHandlerFn);
     lineBotSecret.grantRead(lineChatHandlerFn);
+    googleCalendarSecret.grantRead(lineChatHandlerFn);
 
     lineChatHandlerFn.addToRolePolicy(
       new iam.PolicyStatement({
