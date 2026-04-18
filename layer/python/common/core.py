@@ -347,20 +347,20 @@ def to_isoformat_jst(dt: Optional[datetime]) -> Optional[str]:
 
 # Google Calendar API のイベントを Agent 用の共通形式に整形する
 def normalize_calendar_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    出力イメージ：
+    {
+        "summary": "顧客MTG",
+        "start": "2026-04-17T13:00:00+09:00",
+        "end": "2026-04-17T14:00:00+09:00"
+    }
+    """
+
     start_dt = parse_google_calendar_datetime(event.get("start", {}))
     end_dt = parse_google_calendar_datetime(event.get("end", {}))
 
     if start_dt is None:
         return None
-    
-    """
-    出力イメージ：
-    {
-            "summary": "顧客MTG",
-            "start": "2026-04-17T13:00:00+09:00",
-            "end": "2026-04-17T14:00:00+09:00"
-        }
-    """
 
     return {
         "summary": event.get("summary", "予定"),
@@ -368,4 +368,56 @@ def normalize_calendar_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
         "end": to_isoformat_jst(end_dt),
     }
 
-# 取得した Google Calendar イベント一覧から、Agent に渡すスケジュールサマリを作成する
+# 取得した Google Calendar イベント一覧から、Agent に渡すイベントサマリを作成する
+# 出力は「直近1時間にイベントが入っているか」のフラグと、今後のイベント一覧 (最大3件) 
+def get_calendar_context_from_events(
+    events: List[Dict[str, Any]],
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    if now is None:
+        now = datetime.now(JST)
+
+    parsed_events: List[Dict[str, Any]] = []   # API から取得したイベント一覧 (整形済)
+    upcoming_events: List[Dict[str, Any]] = [] # 最終的に Agent に渡す今後のイベント一覧（最大3件）
+
+    # Google Calendar API から取得したイベントを個別に整形
+    for event in events:
+        normalized_event = normalize_calendar_event(event)
+        if normalized_event is None:
+            continue
+
+        start_dt = datetime.fromisoformat(normalized_event["start"])
+        parsed_events.append(
+            {
+                "summary": normalized_event["summary"],
+                "start_dt": start_dt,
+                "start": normalized_event["start"],
+                "end": normalized_event["end"],
+            }
+        )
+
+    # 現在以降のイベントのみを抽出
+    future_events = [e for e in parsed_events if e["start_dt"] >= now]
+    future_events.sort(key=lambda x: x["start_dt"])
+
+    # 次のイベントを最大3件抽出
+    next_three = future_events[:3]
+
+    for event in next_three:
+        upcoming_events.append(
+            {
+                "summary": event["summary"],
+                "start": event["start"],
+                "end": event["end"],
+            }
+        )
+
+    # 直近1時間以内に予定が入っているかのフラグ
+    within_1h_limit = now + timedelta(hours=1)
+    has_event_within_1h = any(e["start_dt"] <= within_1h_limit for e in next_three)
+
+    return {
+        "ok": True,
+        "has_event_within_1h": has_event_within_1h,
+        "upcoming_events": upcoming_events,
+    }
