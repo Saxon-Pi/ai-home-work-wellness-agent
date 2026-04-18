@@ -385,6 +385,47 @@ def get_google_access_token() -> str:
 
     return access_token
 
+# Google Calendar API から今後のイベントを取得する
+def fetch_google_calendar_events(
+    calendar_id: str = "primary",
+    max_results: int = 10,
+    now: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    if now is None:
+        now = datetime.now(JST)
+
+    access_token = get_google_access_token()
+
+    # Calendar の検索条件
+    params = {
+        "timeMin": now.astimezone(timezone.utc).isoformat(), # 現在時刻以降のイベントを取得
+        "maxResults": str(max_results), # 最大取得件数
+        "singleEvents": "true",         # 繰り返しイベントを個別に取得
+        "orderBy": "startTime",         # 開始時刻順にソート
+    }
+
+    # API のエンドポイント
+    url = (
+        f"https://www.googleapis.com/calendar/v3/calendars/"
+        f"{urllib.parse.quote(calendar_id, safe='')}/events?"
+        f"{urllib.parse.urlencode(params)}"
+    )
+
+    # リクエスト
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        response_data = json.loads(res.read().decode("utf-8"))
+
+    return response_data.get("items", [])
+
 # Google Calendar API の start/end を datetime に変換する
 def parse_google_calendar_datetime(value: Dict[str, str]) -> Optional[datetime]:
     # dateTime (開始時刻・終了時刻が明確にあるイベント) がある場合はそちらを優先
@@ -487,3 +528,19 @@ def get_calendar_context_from_events(
         "has_event_within_1h": has_event_within_1h,
         "upcoming_events": upcoming_events,
     }
+
+# API実行 → イベント整理 → Agent 用フォーマット変換 までの統合レイヤー
+def get_calendar_context() -> Dict[str, Any]:
+    try:
+        events = fetch_google_calendar_events()
+        return get_calendar_context_from_events(events)
+
+    except Exception as e:
+        print("Google Calendar fetch error:", str(e))
+
+        return {
+            "ok": False,
+            "message": "Google Calendar のイベント取得に失敗しました。",
+            "has_event_within_1h": False,
+            "upcoming_events": [],
+        }
