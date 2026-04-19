@@ -8,6 +8,7 @@ from tools import (
     get_environment_summary_tool,
     # LINE に返信するツール (replyToken)
     reply_line_message_tool,
+    # Google Calendar から今後の予定を取得するツール
     get_calendar_context_tool,
 )
 
@@ -50,6 +51,7 @@ chat_agent = Agent(
     tools=[
         get_environment_summary_tool,
         reply_line_message_tool,
+        get_calendar_context_tool,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

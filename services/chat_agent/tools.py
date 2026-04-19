@@ -6,7 +6,8 @@ from typing import Any, Dict
 from strands import tool
 
 # 既存の Lambda 関数から関数をインポート
-from common.core import ( # Lambda Layer 前提のパス
+# Lambda Layer から core.py を読み込む
+from common.core import (
     DEVICE_ID,        # デバイスID
     LOOKBACK_MINUTES, # データ取得期間 (デフォルトは1時間)
     # 直近1時間の室内環境サマリを取得する関数 (最新値、平均値、最大値、CO2トレンド、環境ステータス)
@@ -63,5 +64,6 @@ def reply_line_message_tool(reply_token: str, message: str) -> str:
     - reply_token: LINE の replyToken
     - message: 返信するメッセージ本文
     """
+    print("reply_message:", message)
     reply_line_message(reply_token, message)
     return "LINE にメッセージを返信しました。"

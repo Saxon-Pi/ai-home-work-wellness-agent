@@ -96,5 +96,6 @@ def send_line_message_tool(message: str) -> str:
     引数:
     - message: 信する最終メッセージ本文
     """
+    print("send_message:", message)
     send_line_message(message)
     return "LINE にメッセージを送信しました。"

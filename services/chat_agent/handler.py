@@ -9,7 +9,8 @@ LINEユーザー
 """
 
 import json
-from agent import chat_agent # services.chat_agent.agent の chat_agent
+# services.wellness_agent.agent から chat_agent を読み込む
+from agent import chat_agent
 
 def handler(event, context):
     print("event:", json.dumps(event, ensure_ascii=False))
