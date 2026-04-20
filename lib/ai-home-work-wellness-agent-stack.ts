@@ -172,6 +172,8 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
         GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
+        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
+        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
       },
     });
 
@@ -215,6 +217,8 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
         GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
+        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
+        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
       },
     });
 
