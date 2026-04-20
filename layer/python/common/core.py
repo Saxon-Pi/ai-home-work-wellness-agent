@@ -627,9 +627,122 @@ def build_health_alerts(
     }
 
 # Open-Meteo API から現在の天気と日次の気温情報を取得する
-def fetch_weather_data():
-    return
+def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
+    """
+    出力イメージ：
+    {
+        "condition": "晴れ",
+        "temperature_c": 35.2,
+        "humidity": 58,
+        "temp_max_c": 36.0,
+        "temp_min_c": 24.0
+    }
+    """
+
+    if not WEATHER_LATITUDE or not WEATHER_LONGITUDE:
+        raise RuntimeError("WEATHER_LATITUDE or WEATHER_LONGITUDE is not set")
+
+    if now is None:
+        now = datetime.now(JST)
+
+    params = {
+        "latitude": WEATHER_LATITUDE,
+        "longitude": WEATHER_LONGITUDE,
+        "timezone": "Asia/Tokyo",
+        "hourly": "temperature_2m,relative_humidity_2m,weather_code",
+        "daily": "temperature_2m_max,temperature_2m_min",
+        "forecast_days": "1",
+    }
+
+    url = (
+        "https://api.open-meteo.com/v1/forecast?"
+        f"{urllib.parse.urlencode(params)}"
+    )
+
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        response_data = json.loads(res.read().decode("utf-8"))
+
+    hourly = response_data["hourly"]
+    daily = response_data["daily"]
+
+    hourly_times = hourly["time"]
+    hourly_temps = hourly["temperature_2m"]
+    hourly_humidity = hourly["relative_humidity_2m"]
+    hourly_weather_code = hourly["weather_code"]
+
+    current_hour_str = now.strftime("%Y-%m-%dT%H:00")
+    if current_hour_str in hourly_times:
+        idx = hourly_times.index(current_hour_str)
+    else:
+        # 完全一致しない場合は先頭を使う簡易フォールバック
+        idx = 0
+
+    current_temp = hourly_temps[idx]
+    current_humidity = hourly_humidity[idx]
+    current_weather_code = hourly_weather_code[idx]
+
+    return {
+        "condition": weather_code_to_label(int(current_weather_code)),
+        "temperature_c": float(current_temp),
+        "humidity": int(current_humidity),
+        "temp_max_c": float(daily["temperature_2m_max"][0]),
+        "temp_min_c": float(daily["temperature_2m_min"][0]),
+    }
 
 # API実行 → 天気情報整理 → Agent 用フォーマット変換 までの統合レイヤー
-def get_weather_context():
-    return
+def get_weather_context(now: Optional[datetime] = None) -> Dict[str, Any]:
+    """
+    出力イメージ：
+    {
+        "ok": true,
+        "weather": {
+            "condition": "晴れ",
+            "temperature_c": 35.2,
+            "humidity": 58,
+            "temp_max_c": 36.0,
+            "temp_min_c": 24.0
+        },
+        "season_context": {
+            "season": "summer",
+            "month": 8
+        },
+        "health_alerts": {
+            "heat_risk": true,
+            "dryness_risk": false
+        }
+    }
+    """
+    
+    try:
+        weather = fetch_weather_data(now=now)
+        season_context = get_season_context(now=now)
+        health_alerts = build_health_alerts(
+            weather=weather,
+            season_context=season_context,
+        )
+
+        return {
+            "ok": True,
+            "weather": weather,
+            "season_context": season_context,
+            "health_alerts": health_alerts,
+        }
+
+    except Exception as e:
+        print("Weather fetch error:", str(e))
+        return {
+            "ok": False,
+            "message": "天気情報の取得に失敗しました。",
+            "weather": {},
+            "season_context": {},
+            "health_alerts": {
+                "heat_risk": False,
+                "dryness_risk": False,
+            },
+        }
