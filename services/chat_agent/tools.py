@@ -1,5 +1,13 @@
 """
-Strands Agent がデータ取得や LINE 通知をするために使用するツール群
+Chat Agent が室内環境、カレンダー、天気情報の取得と、LINE 返信を行うために使用するツール群
+これらのツールは、LINE Webhook から起動される Chat Agent から利用されることを想定している
+
+Agent はこれらのツールを使い、以下の流れで動作する
+- 現在の室内環境を確認
+- 今後の予定を確認
+- 現在の天気や気象リスクを確認
+- 上記に関する質問の回答を生成
+- 最終的な返答を LINE に送信
 """
 
 from typing import Any, Dict
@@ -12,10 +20,12 @@ from common.core import (
     LOOKBACK_MINUTES, # データ取得期間 (デフォルトは1時間)
     # 直近1時間の室内環境サマリを取得する関数 (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary,
-    # LINE のチャットに応答する関数
-    reply_line_message,
     # Google Calendar 連携用関数
     get_calendar_context,
+    # 天気予報連携用関数
+    get_weather_context,
+    # LINE のチャットに応答する関数
+    reply_line_message,
 )
 
 # 直近1時間の室内環境データを取得し、要約した結果を返すツール
@@ -52,6 +62,28 @@ def get_calendar_context_tool() -> Dict[str, Any]:
     - upcoming_events: 今後の予定（開始時刻が近い順で最大3件）
     """
     return get_calendar_context()
+
+@tool
+def get_weather_context_tool() -> Dict[str, Any]:
+    """
+    現在の天気情報と季節に関する健康アラート情報を取得するツールです。
+    天気、換気、体調管理、熱中症対策、乾燥対策などに関するアドバイスを行う際に使用してください。
+
+    出力は以下となります:
+    - weather:
+        - condition: 現在の天気（晴れ、曇り、雨 など）
+        - temperature_c: 現在の外気温
+        - humidity: 現在の外気湿度
+        - temp_max_c: 今日の最高気温
+        - temp_min_c: 今日の最低気温
+    - season_context:
+        - season: summer / winter / other
+        - month: 現在の月
+    - health_alerts:
+        - heat_risk: 熱中症対策が必要か
+        - dryness_risk: 乾燥対策が必要か
+    """
+    return get_weather_context()
 
 # LINE に返信するツール (replyToken)
 @tool

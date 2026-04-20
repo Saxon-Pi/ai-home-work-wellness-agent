@@ -649,8 +649,8 @@ def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
         "latitude": WEATHER_LATITUDE,
         "longitude": WEATHER_LONGITUDE,
         "timezone": "Asia/Tokyo",
-        "hourly": "temperature_2m,relative_humidity_2m,weather_code",
-        "daily": "temperature_2m_max,temperature_2m_min",
+        "hourly": "temperature_2m,relative_humidity_2m,weather_code", # 1時間ごとの予報データ
+        "daily": "temperature_2m_max,temperature_2m_min",             # 1日単位のサマリデータ
         "forecast_days": "1",
     }
 
@@ -671,18 +671,22 @@ def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
     hourly = response_data["hourly"]
     daily = response_data["daily"]
 
+    # hourly データは 1時間ごとの配列
     hourly_times = hourly["time"]
     hourly_temps = hourly["temperature_2m"]
     hourly_humidity = hourly["relative_humidity_2m"]
     hourly_weather_code = hourly["weather_code"]
 
+    # 現在時刻を 1時間単位 に丸める
     current_hour_str = now.strftime("%Y-%m-%dT%H:00")
+    # 現在の時間に該当するインデックスを取得
     if current_hour_str in hourly_times:
         idx = hourly_times.index(current_hour_str)
     else:
-        # 完全一致しない場合は先頭を使う簡易フォールバック
+        # 時間が一致しない場合は先頭のデータを使用
         idx = 0
 
+    # 現在の温度、湿度、天気コードを取得
     current_temp = hourly_temps[idx]
     current_humidity = hourly_humidity[idx]
     current_weather_code = hourly_weather_code[idx]
@@ -718,7 +722,7 @@ def get_weather_context(now: Optional[datetime] = None) -> Dict[str, Any]:
         }
     }
     """
-    
+
     try:
         weather = fetch_weather_data(now=now)
         season_context = get_season_context(now=now)
