@@ -64,10 +64,13 @@ def get_calendar_context_tool() -> Dict[str, Any]:
     return get_calendar_context()
 
 @tool
-def get_weather_context_tool() -> Dict[str, Any]:
+def get_weather_context_tool(target_datetime: str) -> Dict[str, Any]:
     """
     現在の天気情報と季節に関する健康アラート情報を取得するツールです。
     天気、換気、体調管理、熱中症対策、乾燥対策などに関するアドバイスを行う際に使用してください。
+
+    引数は以下となります:
+    - target_datetime: ISO 8601 形式の日時文字列（例: 2026-04-20T18:00:00+09:00）
 
     出力は以下となります:
     - weather:

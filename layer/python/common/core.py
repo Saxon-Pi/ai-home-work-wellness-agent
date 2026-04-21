@@ -586,12 +586,40 @@ def weather_code_to_label(code: int) -> str:
 
     return mapping.get(code, "不明")
 
-# 月から季節 (夏季、冬季) を判定する
-def get_season_context(now: Optional[datetime] = None) -> Dict[str, Any]:
-    if now is None:
-        now = datetime.now(JST)
+# 文字列の target_datetime を datetime に変換する
+def parse_target_datetime(target_datetime: Optional[str]) -> datetime:
+    if not target_datetime:
+        return datetime.now(JST)
 
-    month = now.month
+    # UTC → JST 変換 (タイムゾーンがない場合はJSTとして扱う)
+    dt = datetime.fromisoformat(target_datetime)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=JST)
+
+    return dt.astimezone(JST)
+
+# target_dt に最も近い hourly データのインデックスを返す
+def find_nearest_hourly_index(hourly_times: List[str], target_dt: datetime) -> int:
+    min_diff = None
+    min_idx = 0
+
+    for i, t in enumerate(hourly_times):
+        # Open-Meteo の hourly time は timezone 文字列なしで返るため、API指定の Asia/Tokyo 前提で JST を付与
+        hourly_dt = datetime.fromisoformat(t).replace(tzinfo=JST)
+        diff = abs((hourly_dt - target_dt).total_seconds())
+
+        if min_diff is None or diff < min_diff:
+            min_diff = diff
+            min_idx = i
+
+    return min_idx
+
+# 月から季節コンテキスト（summer / winter / other）を判定する
+def get_season_context(target_dt: Optional[datetime] = None) -> Dict[str, Any]:
+    if target_dt is None:
+        target_dt = datetime.now(JST)
+
+    month = target_dt.month
 
     # 夏季: 7 ~ 9 月
     if month in [7, 8, 9]:
@@ -626,8 +654,8 @@ def build_health_alerts(
         "dryness_risk": dryness_risk,
     }
 
-# Open-Meteo API から現在の天気と日次の気温情報を取得する
-def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
+# Open-Meteo API から指定日時に近い天気と日次の気温情報を取得する
+def fetch_weather_data(target_datetime: Optional[str] = None) -> Dict[str, Any]:
     """
     出力イメージ：
     {
@@ -642,8 +670,7 @@ def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
     if not WEATHER_LATITUDE or not WEATHER_LONGITUDE:
         raise RuntimeError("WEATHER_LATITUDE or WEATHER_LONGITUDE is not set")
 
-    if now is None:
-        now = datetime.now(JST)
+    target_dt = parse_target_datetime(target_datetime)
 
     params = {
         "latitude": WEATHER_LATITUDE,
@@ -651,7 +678,7 @@ def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
         "timezone": "Asia/Tokyo",
         "hourly": "temperature_2m,relative_humidity_2m,weather_code", # 1時間ごとの予報データ
         "daily": "temperature_2m_max,temperature_2m_min",             # 1日単位のサマリデータ
-        "forecast_days": "1",
+        "forecast_days": "3", # 最大3日分の予報を取得
     }
 
     url = (
@@ -677,30 +704,40 @@ def fetch_weather_data(now: Optional[datetime] = None) -> Dict[str, Any]:
     hourly_humidity = hourly["relative_humidity_2m"]
     hourly_weather_code = hourly["weather_code"]
 
-    # 現在時刻を 1時間単位 に丸める
-    current_hour_str = now.strftime("%Y-%m-%dT%H:00")
-    # 現在の時間に該当するインデックスを取得
-    if current_hour_str in hourly_times:
-        idx = hourly_times.index(current_hour_str)
-    else:
-        # 時間が一致しない場合は先頭のデータを使用
-        idx = 0
+    # hourly 配列から target_dt に最も近いインデックスを特定
+    idx = find_nearest_hourly_index(hourly_times, target_dt)
 
-    # 現在の温度、湿度、天気コードを取得
-    current_temp = hourly_temps[idx]
-    current_humidity = hourly_humidity[idx]
-    current_weather_code = hourly_weather_code[idx]
+    # 指定時刻の 温度 / 湿度 / 天気コード を取得
+    forecast_temp = hourly_temps[idx]
+    forecast_humidity = hourly_humidity[idx]
+    forecast_weather_code = hourly_weather_code[idx]
+
+    # target_dt から日付文字列（YYYY-MM-DD）を作成
+    target_date_str = target_dt.strftime("%Y-%m-%d")
+    daily_dates = daily["time"]
+
+    # 日付に該当するインデックスを特定
+    if target_date_str in daily_dates:
+        daily_idx = daily_dates.index(target_date_str)
+    else:
+        # target_date が daily データに含まれない場合は先頭の日付を使用
+        daily_idx = 0
+
+    # 指定日付の 最低気温 / 最高気温 を取得
+    forecast_temp_max = daily["temperature_2m_max"][daily_idx]
+    forecast_temp_min = daily["temperature_2m_min"][daily_idx]
 
     return {
-        "condition": weather_code_to_label(int(current_weather_code)),
-        "temperature_c": float(current_temp),
-        "humidity": int(current_humidity),
-        "temp_max_c": float(daily["temperature_2m_max"][0]),
-        "temp_min_c": float(daily["temperature_2m_min"][0]),
+        "condition": weather_code_to_label(int(forecast_weather_code)),
+        "temperature_c": float(forecast_temp),
+        "humidity": int(forecast_humidity),
+        "temp_max_c": float(forecast_temp_max),
+        "temp_min_c": float(forecast_temp_min),
+        "target_datetime": target_dt.isoformat(),
     }
 
 # API実行 → 天気情報整理 → Agent 用フォーマット変換 までの統合レイヤー
-def get_weather_context(now: Optional[datetime] = None) -> Dict[str, Any]:
+def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]:
     """
     出力イメージ：
     {
@@ -724,8 +761,9 @@ def get_weather_context(now: Optional[datetime] = None) -> Dict[str, Any]:
     """
 
     try:
-        weather = fetch_weather_data(now=now)
-        season_context = get_season_context(now=now)
+        target_dt = parse_target_datetime(target_datetime)
+        weather = fetch_weather_data(target_datetime=target_dt.isoformat())
+        season_context = get_season_context(target_dt=target_dt)
         health_alerts = build_health_alerts(
             weather=weather,
             season_context=season_context,
