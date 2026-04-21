@@ -29,7 +29,7 @@ from common.core import ( # Lambda Layer 前提のパス
 def get_environment_summary_tool() -> Dict[str, Any]:
     """
     直近1時間の室内環境データを取得するツールです。
-    室内環境に関する質問の回答やアドバイス生成に使用してください。
+    室内環境に関する質問の回答やアドバイスをする際に使用してください。
     
     以下の情報を返します:
     - summary:
@@ -57,7 +57,7 @@ def format_line_message_tool(advice: str) -> Dict[str, Any]:
     引数:
     - advice: Agent が生成した日本語のアドバイス文
 
-    返り値:
+    以下の情報を返します:
     - line_message: LINE に送信する完成済みメッセージ
     - summary: 室内環境サマリ
     - env_status: 室内環境ステータス
