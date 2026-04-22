@@ -87,7 +87,7 @@ def get_weather_context_tool(target_datetime: str) -> Dict[str, Any]:
         - heat_risk: 熱中症対策が必要か
         - dryness_risk: 乾燥対策が必要か
     """
-    return get_weather_context()
+    return get_weather_context(target_datetime=target_datetime)
 
 # LINE に返信するツール (replyToken)
 @tool
@@ -100,6 +100,6 @@ def reply_line_message_tool(reply_token: str, message: str) -> str:
     - reply_token: LINE の replyToken
     - message: 返信するメッセージ本文
     """
-    print("reply_message:", message)
+    #print("reply_message:", message)
     reply_line_message(reply_token, message)
     return "LINE にメッセージを返信しました。"

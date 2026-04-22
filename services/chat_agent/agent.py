@@ -20,7 +20,7 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 model = BedrockModel(
     model_id=BEDROCK_MODEL_ID,
     region_name=BEDROCK_REGION,
-    temperature=0.5, # 回答のバリエーションを出したい
+    temperature=0.6, # 回答のバリエーションを出したい
 )
 
 SYSTEM_PROMPT = """
@@ -36,12 +36,7 @@ SYSTEM_PROMPT = """
 - まず ユーザの質問の目的を理解する
 - 室内環境に関する質問の場合は、必ず get_environment_summary_tool を使って最新の状態を確認する
 - 会議などの予定、休憩タイミング、仕事の進め方に関する質問の場合は、必要に応じて get_calendar_context_tool を使ってスケジュールを確認する
-- 天気、換気、外気温、体調管理に関する質問の場合は、必要に応じて get_weather_context_tool を使って対象日時の天気と健康アラートを確認する
-- get_weather_context_tool に入力する時間帯については、以下を目安に解釈してよい
-  - 朝: 08:00
-  - 昼: 12:00
-  - 夕方: 18:00
-  - 夜: 21:00
+- 天気、換気、外気温、体調管理に関する質問の場合は、必要に応じて get_weather_context_tool を使って適切な日時の天気を確認する
 - 次に [回答の方針] に従い、回答を生成する
 - 最後に reply_line_message_tool を使って LINE に返信する
 
@@ -53,6 +48,13 @@ SYSTEM_PROMPT = """
 - 2〜5文程度の簡潔な文章とすること
 - 不安を煽りすぎず、自然な内容とすること
 - 必要に応じて換気、水分補給、休憩、室温調整などを提案すること
+
+[天気に関する補足]
+- get_weather_context_tool に入力する時間帯については、以下を目安に解釈してよい
+  - 朝: 08:00
+  - 昼: 12:00
+  - 夕方: 18:00
+  - 夜: 21:00
 """
 
 chat_agent = Agent(

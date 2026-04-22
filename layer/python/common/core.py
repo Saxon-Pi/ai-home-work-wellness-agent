@@ -671,6 +671,7 @@ def fetch_weather_data(target_datetime: Optional[str] = None) -> Dict[str, Any]:
         raise RuntimeError("WEATHER_LATITUDE or WEATHER_LONGITUDE is not set")
 
     target_dt = parse_target_datetime(target_datetime)
+    print(f"[Weather] fetch target: {target_dt.isoformat()}")
 
     params = {
         "latitude": WEATHER_LATITUDE,
@@ -762,6 +763,8 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
 
     try:
         target_dt = parse_target_datetime(target_datetime)
+        print(f"[Weather] target_datetime(raw): {target_datetime}")
+        print(f"[Weather] target_datetime(parsed JST): {target_dt.isoformat()}")
         weather = fetch_weather_data(target_datetime=target_dt.isoformat())
         season_context = get_season_context(target_dt=target_dt)
         health_alerts = build_health_alerts(
