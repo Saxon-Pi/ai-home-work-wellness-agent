@@ -9,8 +9,13 @@ LINEユーザー
 """
 
 import json
+from datetime import datetime, timedelta, timezone
+
 # services.wellness_agent.agent から chat_agent を読み込む
 from agent import chat_agent
+
+JST = timezone(timedelta(hours=9))
+now_jst = datetime.now(JST).isoformat()
 
 def handler(event, context):
     print("event:", json.dumps(event, ensure_ascii=False))
@@ -46,8 +51,13 @@ def handler(event, context):
     user_text = message["text"]
 
     user_request = f"""
+現在の日時は {now_jst} です（JST）。
+
 ユーザから LINE で以下のメッセージを受け取りました。
 内容を理解し、必要に応じてツールを使用し、LINE に返信してください。
+
+ユーザーが「今」、「今夜」、「明日の朝」などの時間表現を使った場合は、
+必ず現在日時を基準に target_datetime を解釈してください。
 
 replyToken: {reply_token}
 ユーザメッセージ: {user_text}
