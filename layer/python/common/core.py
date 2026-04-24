@@ -805,7 +805,7 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
 # グラフレポート作成
 # =====================================================
 
-# グラフの描画範囲に応じてデータの取得期間と集約粒度を決める
+# グラフの描画範囲に応じてデータの取得期間と集計粒度を決める
 # (範囲は1時間、1日、7日のいずれかを選択)
 def get_period_config(period: str) -> Dict[str, Any]:
     configs = {
@@ -892,9 +892,139 @@ def run_athena_query_for_sensor_history(period: str) -> List[Dict[str, Any]]:
             if header is None:
                 header = values
                 continue
-            
+
             # JSONライクに変換してリスト化
             record = dict(zip(header, values))
             rows.append(record)
 
     return rows
+
+# datetime を bucket_minutes 単位で切り下げる
+# 例: (bucket_minutes=10)
+# 2026-04-24T19:02:00+09:00 → 2026-04-24T19:00:00+09:00
+# 2026-04-24T20:48:00+09:00 → 2026-04-24T20:40:00+09:00
+def floor_datetime_to_bucket(dt: datetime, bucket_minutes: int) -> datetime:
+    floored_minute = (dt.minute // bucket_minutes) * bucket_minutes
+    return dt.replace(minute=floored_minute, second=0, microsecond=0)
+
+# データの先頭と末尾の差分からトレンドを判定する (超簡易版)
+def detect_trend(values: List[float]) -> str:
+    if len(values) < 2:
+        return "stable"
+
+    first_value = values[0]
+    last_value = values[-1]
+    diff = last_value - first_value
+
+    if diff > 0:
+        return "rising"
+    if diff < 0:
+        return "falling"
+
+    return "stable"
+
+# Athena の生データを、グラフ描画と Agent が使いやすい形式に整える
+# bucket_minutes で集計単位の切り替えが発生するため、SQL 側ではなく Python で実装している
+def build_chart_dataset(rows: List[Dict[str, Any]], period: str) -> Dict[str, Any]:
+    if not rows:
+        return {
+            "ok": False,
+            "message": "対象期間のセンサーデータがありません。",
+        }
+
+    config = get_period_config(period)
+    bucket_minutes = config["bucket_minutes"] # データ集計間隔 (min)
+
+    buckets: Dict[str, Dict[str, List[float]]] = {}
+
+    # Athena の生データ配列を bucket_minutes 単位にグループ化
+    for row in rows:
+        timestamp_ms = int(float(row["timestamp_ms"]))
+        dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=JST)
+        bucket_dt = floor_datetime_to_bucket(dt, bucket_minutes)
+        bucket_key = bucket_dt.isoformat() # 切り下げした timestamp をキーにしている
+
+        if bucket_key not in buckets:
+            buckets[bucket_key] = {
+                "co2_ppm": [],
+                "temperature": [],
+                "humidity": [],
+            }
+
+        buckets[bucket_key]["co2_ppm"].append(float(row["co2_ppm"]))
+        buckets[bucket_key]["temperature"].append(float(row["temperature"]))
+        buckets[bucket_key]["humidity"].append(float(row["humidity"]))
+
+        """
+        buckets イメージ：
+        buckets = {
+            "2026-04-24T22:00:00+09:00": {
+                "co2_ppm": [600, 620, 610], # 20:00台の複数データをグループ化している
+                "temperature": [23.1, 23.3, 23.2],
+                "humidity": [45.0, 44.5, 44.8]
+            },
+            "2026-04-24T22:10:00+09:00": {
+                "co2_ppm": [630],
+                "temperature": [23.4],
+                "humidity": [44.2]
+            }
+        }
+        """
+
+    series = {
+        "co2_ppm": [],
+        "temperature": [],
+        "humidity": [],
+    }
+
+    sorted_bucket_keys = sorted(buckets.keys()) # 時系列ソート
+
+    # bucket_key 単位でデータを平均化する
+    # → 平均化によってグラフが平滑になる
+    for bucket_key in sorted_bucket_keys:
+        bucket = buckets[bucket_key]
+        series["co2_ppm"].append({
+            "time": bucket_key,
+            "value": round(sum(bucket["co2_ppm"]) / len(bucket["co2_ppm"]), 1),
+        })
+        series["temperature"].append({
+            "time": bucket_key,
+            "value": round(sum(bucket["temperature"]) / len(bucket["temperature"]), 1),
+        })
+        series["humidity"].append({
+            "time": bucket_key,
+            "value": round(sum(bucket["humidity"]) / len(bucket["humidity"]), 1),
+        })
+
+    co2_values = [p["value"] for p in series["co2_ppm"]]
+    temperature_values = [p["value"] for p in series["temperature"]]
+    humidity_values = [p["value"] for p in series["humidity"]]
+
+    # サマリ情報を付加して、最終的に Agent に渡すデータを構築
+    chart_data = {
+        "ok": True,
+        "sample_interval_minutes": bucket_minutes,
+        "series": series,
+        "summary_stats": {
+            "co2_ppm": {
+                "min": min(co2_values),
+                "max": max(co2_values),
+                "avg": round(sum(co2_values) / len(co2_values), 1),
+                "trend": detect_trend(co2_values),
+            },
+            "temperature": {
+                "min": min(temperature_values),
+                "max": max(temperature_values),
+                "avg": round(sum(temperature_values) / len(temperature_values), 1),
+                "trend": detect_trend(temperature_values),
+            },
+            "humidity": {
+                "min": min(humidity_values),
+                "max": max(humidity_values),
+                "avg": round(sum(humidity_values) / len(humidity_values), 1),
+                "trend": detect_trend(humidity_values),
+            },
+        },
+    }
+
+    return chart_data
