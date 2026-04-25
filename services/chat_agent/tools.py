@@ -28,8 +28,11 @@ from common.core import (
     generate_sensor_chart_report,
     # LINE のチャットに応答する関数
     reply_line_message,
-    # 画像付き応答用関数
-    reply_line_image_message,
+    # テキストと画像を送信する関数
+    reply_line_text_and_image_message,
+
+    # # 画像のみを送信する関数
+    # reply_line_image_message,
 )
 
 # 直近1時間の室内環境データを取得し、要約した結果を返すツール
@@ -125,14 +128,29 @@ def reply_line_message_tool(reply_token: str, message: str) -> str:
     return "LINE にメッセージを返信しました。"
 
 @tool
-def reply_line_image_message_tool(reply_token: str, image_url: str) -> str:
+def reply_line_text_and_image_message_tool(reply_token: str, message: str, image_url: str,) -> str:
     """
-    URL を画像として LINE ユーザーに返信するツールです。
-    グラフ画像をユーザへ送信する際は、このツールを使用してください。
+    テキストと画像を LINE ユーザに同時返信するツールです。
+    室内環境データのグラフ画像と、そのグラフに基づく簡単なレポートや推奨アクションを
+    ユーザーへ送信する際に使用してください。
 
     引数:
     - reply_token: LINE Webhook イベントに含まれる replyToken
-    - image_url: 返信する画像のURL
+    - message: 室内環境データの傾向や推奨アクションを含むレポート本文
+    - image_url: 返信するグラフ画像のURL
     """
-    reply_line_image_message(reply_token=reply_token, image_url=image_url)
-    return "LINEに画像を返信しました。"
+    reply_line_text_and_image_message(reply_token, message, image_url)
+    return "LINEにテキストと画像を返信しました。"
+
+# @tool
+# def reply_line_image_message_tool(reply_token: str, image_url: str) -> str:
+#     """
+#     画像を LINE ユーザに返信するツールです。
+#     グラフ画像をユーザへ送信する際は、このツールを使用してください。
+
+#     引数:
+#     - reply_token: LINE Webhook イベントに含まれる replyToken
+#     - image_url: 返信する画像のURL
+#     """
+#     reply_line_image_message(reply_token=reply_token, image_url=image_url)
+#     return "LINEに画像を返信しました。"

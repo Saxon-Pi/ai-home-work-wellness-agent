@@ -1141,7 +1141,7 @@ def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
             "message": "グラフレポートの生成に失敗しました。",
         }
 
-# LINE に画像メッセージを返信する
+# LINE に画像メッセージを返信する (テキストなし)
 def reply_line_image_message(reply_token: str, image_url: str) -> None:
     line_config = get_line_config()
 
@@ -1172,3 +1172,44 @@ def reply_line_image_message(reply_token: str, image_url: str) -> None:
     with urllib.request.urlopen(req) as res:
         response = res.read().decode("utf-8")
         print("LINE image reply response:", response)
+
+# LINE に テキスト + 画像 のメッセージを返信する
+def reply_line_text_and_image_message(
+    reply_token: str,
+    text: str,
+    image_url: str,
+) -> None:
+    line_config = get_line_config()
+
+    url = "https://api.line.me/v2/bot/message/reply"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {line_config['channel_access_token']}",
+    }
+
+    # 1回の reply でテキストと画像の両方を送る (replyTokenは1回しか使えないため)
+    body = {
+        "replyToken": reply_token,
+        "messages": [
+            {
+                "type": "text",
+                "text": text,
+            },
+            {
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": image_url,
+            },
+        ],
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        response = res.read().decode("utf-8")
+        print("LINE text+image reply response:", response)
