@@ -180,6 +180,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     metricsTable.grantReadData(wellnessAgentFn);
     agentStateTable.grantReadWriteData(wellnessAgentFn);
     lineBotSecret.grantRead(wellnessAgentFn);
+    googleCalendarSecret.grantRead(wellnessAgentFn);
 
     wellnessAgentFn.addToRolePolicy(
       new iam.PolicyStatement({

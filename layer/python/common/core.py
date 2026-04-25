@@ -13,9 +13,12 @@ from datetime import datetime, timedelta, timezone
 from statistics import mean
 import uuid
 from io import BytesIO
-import matplotlib.pyplot as plt
 import boto3
 from boto3.dynamodb.conditions import Key
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 TABLE_NAME = os.environ["METRICS_TABLE_NAME"]                    # センサデータテーブル
 AGENT_STATE_TABLE_NAME = os.environ["AGENT_STATE_TABLE_NAME"]    # ステータステーブル
