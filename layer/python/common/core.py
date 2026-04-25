@@ -1140,3 +1140,35 @@ def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
             "ok": False,
             "message": "グラフレポートの生成に失敗しました。",
         }
+
+# LINE に画像メッセージを返信する
+def reply_line_image_message(reply_token: str, image_url: str) -> None:
+    line_config = get_line_config()
+
+    url = "https://api.line.me/v2/bot/message/reply"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {line_config['channel_access_token']}",
+    }
+
+    body = {
+        "replyToken": reply_token,
+        "messages": [
+            {
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": image_url,
+            }
+        ],
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req) as res:
+        response = res.read().decode("utf-8")
+        print("LINE image reply response:", response)

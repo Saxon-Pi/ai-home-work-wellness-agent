@@ -24,8 +24,12 @@ from common.core import (
     get_calendar_context,
     # 天気予報連携用関数
     get_weather_context,
+    # グラフレポート作成用関数
+    generate_sensor_chart_report,
     # LINE のチャットに応答する関数
     reply_line_message,
+    # 画像付き応答用関数
+    reply_line_image_message,
 )
 
 # 直近1時間の室内環境データを取得し、要約した結果を返すツール
@@ -89,6 +93,22 @@ def get_weather_context_tool(target_datetime: str) -> Dict[str, Any]:
     """
     return get_weather_context(target_datetime=target_datetime)
 
+@tool
+def generate_sensor_chart_report_tool(period: str) -> Dict[str, Any]:
+    """
+    指定期間の室内環境データからグラフレポートを生成するツールです。
+    ユーザが室内環境の推移やグラフ表示を求めた場合に使用してください。
+
+    引数:
+    - period: 取得期間 (使用できる値は "1h", "1d", "7d")
+
+    以下の情報を返します:
+    - image_url: 生成したグラフ画像の URL
+    - chart_data.summary_stats: CO2/温度/湿度 の 最小/最大/平均/傾向
+    - summary: グラフ生成結果のサマリ
+    """
+    return generate_sensor_chart_report(period=period)
+
 # LINE に返信するツール (replyToken)
 @tool
 def reply_line_message_tool(reply_token: str, message: str) -> str:
@@ -103,3 +123,16 @@ def reply_line_message_tool(reply_token: str, message: str) -> str:
     #print("reply_message:", message)
     reply_line_message(reply_token, message)
     return "LINE にメッセージを返信しました。"
+
+@tool
+def reply_line_image_message_tool(reply_token: str, image_url: str) -> str:
+    """
+    URL を画像として LINE ユーザーに返信するツールです。
+    グラフ画像をユーザへ送信する際は、このツールを使用してください。
+
+    引数:
+    - reply_token: LINE Webhook イベントに含まれる replyToken
+    - image_url: 返信する画像のURL
+    """
+    reply_line_image_message(reply_token=reply_token, image_url=image_url)
+    return "LINEに画像を返信しました。"
