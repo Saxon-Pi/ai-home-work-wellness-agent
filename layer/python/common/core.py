@@ -907,20 +907,20 @@ def floor_datetime_to_bucket(dt: datetime, bucket_minutes: int) -> datetime:
     floored_minute = (dt.minute // bucket_minutes) * bucket_minutes
     return dt.replace(minute=floored_minute, second=0, microsecond=0)
 
-# データの先頭と末尾の差分からトレンドを判定する (超簡易版)
-def detect_trend(values: List[float]) -> str:
+# データの先頭と末尾の差分からトレンドを判定する
+def detect_trend(values: List[float], threshold: float) -> str:
     if len(values) < 2:
         return "stable"
+    
+    diff = values[-1] - values[0]
 
-    first_value = values[0]
-    last_value = values[-1]
-    diff = last_value - first_value
-
-    if diff > 0:
+    # 差分が threshold 以上なら rising / falling と判定
+    if diff >= threshold:
         return "rising"
-    if diff < 0:
+    if diff <= -threshold:
         return "falling"
-
+    
+    # threshold 未満の変化は stable
     return "stable"
 
 # Athena の生データを、グラフ描画と Agent が使いやすい形式に整える
@@ -1010,21 +1010,133 @@ def build_chart_dataset(rows: List[Dict[str, Any]], period: str) -> Dict[str, An
                 "min": min(co2_values),
                 "max": max(co2_values),
                 "avg": round(sum(co2_values) / len(co2_values), 1),
-                "trend": detect_trend(co2_values),
+                "trend": detect_trend(co2_values, threshold=100),
             },
             "temperature": {
                 "min": min(temperature_values),
                 "max": max(temperature_values),
                 "avg": round(sum(temperature_values) / len(temperature_values), 1),
-                "trend": detect_trend(temperature_values),
+                "trend": detect_trend(temperature_values, threshold=1.0),
             },
             "humidity": {
                 "min": min(humidity_values),
                 "max": max(humidity_values),
                 "avg": round(sum(humidity_values) / len(humidity_values), 1),
-                "trend": detect_trend(humidity_values),
+                "trend": detect_trend(humidity_values, threshold=5.0),
             },
         },
     }
 
     return chart_data
+
+# matplotlib でクエリデータからグラフ画像を作成する
+def build_sensor_chart_image(chart_data: Dict[str, Any], period: str) -> bytes:
+    series = chart_data["series"]
+
+    x_labels = [p["time"] for p in series["co2_ppm"]]
+    co2_values = [p["value"] for p in series["co2_ppm"]]
+    temperature_values = [p["value"] for p in series["temperature"]]
+    humidity_values = [p["value"] for p in series["humidity"]]
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+
+    axes[0].plot(x_labels, co2_values)
+    axes[0].set_title(f"CO2 ({period})")
+    axes[0].set_ylabel("ppm")
+
+    axes[1].plot(x_labels, temperature_values)
+    axes[1].set_title(f"Temperature ({period})")
+    axes[1].set_ylabel("℃")
+
+    axes[2].plot(x_labels, humidity_values)
+    axes[2].set_title(f"Humidity ({period})")
+    axes[2].set_ylabel("%")
+    axes[2].set_xlabel("Time")
+
+    max_xticks = 8
+    if len(x_labels) > max_xticks:
+        step = max(1, len(x_labels) // max_xticks)
+        tick_positions = list(range(0, len(x_labels), step))
+        tick_labels = [x_labels[i][11:16] if period == "1h" else x_labels[i][5:16] for i in tick_positions]
+        axes[2].set_xticks(tick_positions)
+        axes[2].set_xticklabels(tick_labels, rotation=30, ha="right")
+    else:
+        tick_labels = [x[11:16] if period == "1h" else x[5:16] for x in x_labels]
+        axes[2].set_xticks(range(len(x_labels)))
+        axes[2].set_xticklabels(tick_labels, rotation=30, ha="right")
+
+    plt.tight_layout()
+
+    buffer = BytesIO()
+    fig.savefig(buffer, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buffer.seek(0)
+
+    return buffer.read()
+
+# グラフ画像を S3 に保存し、署名付きURL を発行する
+def upload_report_image_to_s3(image_bytes: bytes, period: str) -> Dict[str, str]:
+    today_str = datetime.now(JST).strftime("%Y-%m-%d")
+    filename = f"sensor_report_{period}_{uuid.uuid4().hex[:8]}.png"
+    s3_key = f"reports/{today_str}/{filename}"
+
+    s3_client.put_object(
+        Bucket=REPORT_BUCKET_NAME,
+        Key=s3_key,
+        Body=image_bytes,
+        ContentType="image/png",
+    )
+
+    # 署名付きURL を発行
+    presigned_url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": REPORT_BUCKET_NAME,
+            "Key": s3_key,
+        },
+        ExpiresIn=3600, # 1h 有効
+    )
+
+    return {
+        "image_s3_key": s3_key,
+        "image_url": presigned_url,
+    }
+
+# 指定期間のセンサーデータからグラフ画像とコメント用データを生成する
+def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
+    try:
+        rows = run_athena_query_for_sensor_history(period) # クエリ実行
+
+        chart_data = build_chart_dataset(rows, period)     # データ整形
+        if not chart_data["ok"]:
+            return chart_data
+
+        image_bytes = build_sensor_chart_image(chart_data, period)     # グラフ作成
+        upload_result = upload_report_image_to_s3(image_bytes, period) # S3 アップロード
+
+        period_map = {
+            "1h": "1時間",
+            "1d": "1日",
+            "7d": "1週間",
+        }
+
+        period_text = period_map.get(period, period)
+
+        return {
+            "ok": True,
+            "period": period,
+            "image_s3_key": upload_result["image_s3_key"],
+            "image_url": upload_result["image_url"],
+            "summary": f"過去{period_text}の温度・湿度・CO2の推移グラフを生成しました。",
+            "chart_data": {
+                "sample_interval_minutes": chart_data["sample_interval_minutes"],
+                "summary_stats": chart_data["summary_stats"],
+            },
+        }
+
+    except Exception as e:
+        print("Sensor chart report error:", str(e))
+        return {
+            "ok": False,
+            "message": "グラフレポートの生成に失敗しました。",
+        }
