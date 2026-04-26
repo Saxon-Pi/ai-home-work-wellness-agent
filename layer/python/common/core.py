@@ -403,6 +403,11 @@ def get_google_access_token() -> str:
 
     return access_token
 
+# Google Calendar API 用のフォーマットに日時を変換する
+# 例: 2026-04-27T08:00:00Z
+def to_google_datetime(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
 # Google Calendar API から今後のイベントを取得する
 def fetch_google_calendar_events(
     calendar_id: str = "primary",
@@ -414,9 +419,14 @@ def fetch_google_calendar_events(
 
     access_token = get_google_access_token()
 
+    # イベント取得期間 (今後1週間)
+    time_min = to_google_datetime(now)
+    time_max = to_google_datetime(now + timedelta(days=7))
+
     # Calendar の検索条件
     params = {
-        "timeMin": now.astimezone(timezone.utc).isoformat(), # 現在時刻以降のイベントを取得
+        "timeMin": time_min,            # イベント取得開始日時
+        "timeMax": time_max,            # イベント取得終了日時
         "maxResults": str(max_results), # 最大取得件数
         "singleEvents": "true",         # 繰り返しイベントを個別に取得
         "orderBy": "startTime",         # 開始時刻順にソート
@@ -429,6 +439,10 @@ def fetch_google_calendar_events(
         f"{urllib.parse.urlencode(params)}"
     )
 
+    print("[Calendar] time_min:", time_min)
+    print("[Calendar] time_max:", time_max)
+    print("[Calendar] request_url:", url)
+
     # リクエスト
     req = urllib.request.Request(
         url,
@@ -439,10 +453,15 @@ def fetch_google_calendar_events(
         method="GET",
     )
 
-    with urllib.request.urlopen(req) as res:
-        response_data = json.loads(res.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req) as res:
+            response_data = json.loads(res.read().decode("utf-8"))
+        return response_data.get("items", [])
 
-    return response_data.get("items", [])
+    except urllib.error.HTTPError as e:
+        print("Google Calendar fetch error:", e)
+        print("Google Calendar error body:", e.read().decode("utf-8"))
+        raise
 
 # Google Calendar API の start/end を datetime に変換する
 def parse_google_calendar_datetime(value: Dict[str, str]) -> Optional[datetime]:

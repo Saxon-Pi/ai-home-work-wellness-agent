@@ -15,9 +15,10 @@ from datetime import datetime, timedelta, timezone
 from agent import chat_agent
 
 JST = timezone(timedelta(hours=9))
-now_jst = datetime.now(JST).isoformat()
 
 def handler(event, context):
+    now_jst = datetime.now(JST).isoformat()
+    
     print("event:", json.dumps(event, ensure_ascii=False))
 
     body = json.loads(event.get("body", "{}"))

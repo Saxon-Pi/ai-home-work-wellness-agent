@@ -35,9 +35,10 @@ from common.core import (
 )
 
 JST = timezone(timedelta(hours=9))
-now_jst = datetime.now(JST).isoformat()
 
 def handler(event, context):
+    now_jst = datetime.now(JST).isoformat()
+
     result = get_environment_summary(
         device_id=DEVICE_ID,
         lookback_minutes=LOOKBACK_MINUTES,
