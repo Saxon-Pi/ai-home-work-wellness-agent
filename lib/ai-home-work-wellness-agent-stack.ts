@@ -132,36 +132,47 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // Athena
     // =====================================================
 
-    // Athena の DB Connector はコンソールから作成する
-    // Amazon Athena > データソースとカタログ > データソースの作成
-    // - データソースを選択: Amazon DynamoDB
-    // - データソース名: dynamodb_datasource_report
-    // - Glue Data Catalog IAM role: arn:aws:iam::<account-id>:role/<AthenaDynamoDataSourceRoleの名称>
-    // - Amazon S3: s3://aihomeworkwellnessagentst-reportartifactsbucket219-zpdmzth7yhfj/athena-results
+    /* 
+      データソース作成と権限周りで沼ったので Grafana 用に作成したデータソースを流用する
+      作成手順は　Grafanaデータ可視化手順書.md　を参照
+    */
 
-    const athenaDynamoDataSourceRole = new iam.Role(this, "AthenaDynamoDataSourceRole", {
-      assumedBy: new iam.ServicePrincipal("athena.amazonaws.com"),
-    });
-    metricsTable.grantReadData(athenaDynamoDataSourceRole);
-    reportArtifactsBucket.grantReadWrite(athenaDynamoDataSourceRole);
+    // // Athena の DB Connector はコンソールから作成する
+    // // Amazon Athena > データソースとカタログ > データソースの作成
+    // // - データソースを選択: Amazon DynamoDB
+    // // - データソース名: dynamodb_datasource_report2
+    // // - Glue Data Catalog IAM role: arn:aws:iam::<account-id>:role/<AthenaDynamoDataSourceRoleの名称>
+    // // - Amazon S3: s3://aihomeworkwellnessagentst-reportartifactsbucket219-zpdmzth7yhfj/athena-results
 
-    athenaDynamoDataSourceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["s3:ListBucket", "s3:GetBucketLocation"],
-        resources: [reportArtifactsBucket.bucketArn],
-      })
-    );
+    // // Lake Formation 絡みでデータソース作成が失敗する場合は、ユーザとロールを admin 登録する
+    // // Lake Formation > Administrative roles and tasks > Data lake administrators
 
-    athenaDynamoDataSourceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-        ],
-        resources: [`${reportArtifactsBucket.bucketArn}/*`],
-      })
-    );
+    // const athenaDynamoDataSourceRole = new iam.Role(this, "AthenaDynamoDataSourceRole", {
+    //   assumedBy: new iam.CompositePrincipal(
+    //     new iam.ServicePrincipal("athena.amazonaws.com"),
+    //     new iam.ServicePrincipal("lakeformation.amazonaws.com"),
+    //   ),
+    // });
+    // metricsTable.grantReadData(athenaDynamoDataSourceRole);
+    // reportArtifactsBucket.grantReadWrite(athenaDynamoDataSourceRole);
+
+    // athenaDynamoDataSourceRole.addToPolicy(
+    //   new iam.PolicyStatement({
+    //     actions: ["s3:ListBucket", "s3:GetBucketLocation"],
+    //     resources: [reportArtifactsBucket.bucketArn],
+    //   })
+    // );
+
+    // athenaDynamoDataSourceRole.addToPolicy(
+    //   new iam.PolicyStatement({
+    //     actions: [
+    //       "s3:GetObject",
+    //       "s3:PutObject",
+    //       "s3:DeleteObject",
+    //     ],
+    //     resources: [`${reportArtifactsBucket.bucketArn}/*`],
+    //   })
+    // );
 
     // =====================================================
     // Lambda
@@ -256,7 +267,8 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset("services/chat_agent"),
-      timeout: cdk.Duration.seconds(60),
+      timeout: cdk.Duration.seconds(180), // グラフ作成時のタイムアウト対策
+      memorySize: 1024,                   // グラフ作成のためスペックアップ
       layers: [strandsLayer, commonLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
@@ -274,6 +286,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         ATHENA_TABLE: "room_metrics",
         ATHENA_OUTPUT_LOCATION: `s3://${reportArtifactsBucket.bucketName}/athena-results/`,
         REPORT_BUCKET_NAME: reportArtifactsBucket.bucketName,
+        MPLCONFIGDIR: "/tmp/matplotlib",
       },
     });
 

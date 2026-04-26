@@ -1138,14 +1138,20 @@ def upload_report_image_to_s3(image_bytes: bytes, period: str) -> Dict[str, str]
 # 指定期間のセンサーデータからグラフ画像とコメント用データを生成する
 def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
     try:
+        print("[Report] start athena query")
         rows = run_athena_query_for_sensor_history(period) # クエリ実行
+        print(f"[Report] athena rows: {len(rows)}")
 
+        print("[Report] build chart dataset")
         chart_data = build_chart_dataset(rows, period)     # データ整形
         if not chart_data["ok"]:
             return chart_data
 
+        print("[Report] build image")
         image_bytes = build_sensor_chart_image(chart_data, period)     # グラフ作成
+        print("[Report] upload image")
         upload_result = upload_report_image_to_s3(image_bytes, period) # S3 アップロード
+        print("[Report] done")
 
         period_map = {
             "1h": "1時間",
