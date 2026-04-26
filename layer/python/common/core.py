@@ -8,6 +8,7 @@ import time
 import json
 import urllib.parse
 import urllib.request
+import urllib.error
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from statistics import mean
@@ -406,7 +407,12 @@ def get_google_access_token() -> str:
 # Google Calendar API 用のフォーマットに日時を変換する
 # 例: 2026-04-27T08:00:00Z
 def to_google_datetime(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return (
+        dt.astimezone(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 # Google Calendar API から今後のイベントを取得する
 def fetch_google_calendar_events(
@@ -439,9 +445,7 @@ def fetch_google_calendar_events(
         f"{urllib.parse.urlencode(params)}"
     )
 
-    print("[Calendar] time_min:", time_min)
-    print("[Calendar] time_max:", time_max)
-    print("[Calendar] request_url:", url)
+    print(f"[Calendar] range: {time_min} - {time_max}")
 
     # リクエスト
     req = urllib.request.Request(
@@ -456,11 +460,15 @@ def fetch_google_calendar_events(
     try:
         with urllib.request.urlopen(req) as res:
             response_data = json.loads(res.read().decode("utf-8"))
-        return response_data.get("items", [])
+
+            items = response_data.get("items", [])
+            print(f"[Calendar] events: {len(items)}")
+            return items
 
     except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
         print("Google Calendar fetch error:", e)
-        print("Google Calendar error body:", e.read().decode("utf-8"))
+        print("Google Calendar error body:", error_body)
         raise
 
 # Google Calendar API の start/end を datetime に変換する
@@ -571,6 +579,19 @@ def get_calendar_context() -> Dict[str, Any]:
     try:
         events = fetch_google_calendar_events()
         return get_calendar_context_from_events(events)
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        print("Google Calendar fetch error:", e)
+        print("Google Calendar error status:", e.code)
+        print("Google Calendar error body:", error_body)
+
+        return {
+            "ok": False,
+            "message": "Google Calendar のイベント取得に失敗しました。",
+            "has_event_within_1h": False,
+            "upcoming_events": [],
+        }
 
     except Exception as e:
         print("Google Calendar fetch error:", str(e))
@@ -706,7 +727,6 @@ def fetch_weather_data(target_datetime: Optional[str] = None) -> Dict[str, Any]:
         raise RuntimeError("WEATHER_LATITUDE or WEATHER_LONGITUDE is not set")
 
     target_dt = parse_target_datetime(target_datetime)
-    print(f"[Weather] fetch target: {target_dt.isoformat()}")
 
     params = {
         "latitude": WEATHER_LATITUDE,
@@ -798,9 +818,11 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
 
     try:
         target_dt = parse_target_datetime(target_datetime)
-        print(f"[Weather] target_datetime(raw): {target_datetime}")
-        print(f"[Weather] target_datetime(parsed JST): {target_dt.isoformat()}")
+        print(f"[Weather] target: {target_dt.isoformat()}")
+
         weather = fetch_weather_data(target_datetime=target_dt.isoformat())
+        print(f"[Weather] result: {weather['condition']}, {weather['temperature_c']}C, {weather['humidity']}%")
+
         season_context = get_season_context(target_dt=target_dt)
         health_alerts = build_health_alerts(
             weather=weather,
@@ -1092,15 +1114,15 @@ def build_sensor_chart_image(chart_data: Dict[str, Any], period: str) -> bytes:
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
 
-    axes[0].plot(x_labels, co2_values)
+    axes[0].plot(x_labels, co2_values, color="green")
     axes[0].set_title(f"CO2 ({period})")
     axes[0].set_ylabel("ppm")
 
-    axes[1].plot(x_labels, temperature_values)
+    axes[1].plot(x_labels, temperature_values, color="orange")
     axes[1].set_title(f"Temperature ({period})")
     axes[1].set_ylabel("℃")
 
-    axes[2].plot(x_labels, humidity_values)
+    axes[2].plot(x_labels, humidity_values, color="blue")
     axes[2].set_title(f"Humidity ({period})")
     axes[2].set_ylabel("%")
     axes[2].set_xlabel("Time")
@@ -1157,20 +1179,18 @@ def upload_report_image_to_s3(image_bytes: bytes, period: str) -> Dict[str, str]
 # 指定期間のセンサーデータからグラフ画像とコメント用データを生成する
 def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
     try:
-        print("[Report] start athena query")
+        print(f"[Report] period: {period}")
         rows = run_athena_query_for_sensor_history(period) # クエリ実行
         print(f"[Report] athena rows: {len(rows)}")
 
-        print("[Report] build chart dataset")
         chart_data = build_chart_dataset(rows, period)     # データ整形
         if not chart_data["ok"]:
             return chart_data
 
-        print("[Report] build image")
         image_bytes = build_sensor_chart_image(chart_data, period)     # グラフ作成
-        print("[Report] upload image")
+
         upload_result = upload_report_image_to_s3(image_bytes, period) # S3 アップロード
-        print("[Report] done")
+        print(f"[Report] image_s3_key: {upload_result['image_s3_key']}")
 
         period_map = {
             "1h": "1時間",

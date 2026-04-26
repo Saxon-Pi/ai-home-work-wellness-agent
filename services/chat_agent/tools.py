@@ -123,7 +123,7 @@ def reply_line_message_tool(reply_token: str, message: str) -> str:
     - reply_token: LINE の replyToken
     - message: 返信するメッセージ本文
     """
-    #print("reply_message:", message)
+    print("reply_message:", message)
     reply_line_message(reply_token, message)
     return "LINE にメッセージを返信しました。"
 
@@ -139,6 +139,8 @@ def reply_line_text_and_image_message_tool(reply_token: str, message: str, image
     - message: 室内環境データの傾向や推奨アクションを含むレポート本文
     - image_url: 返信するグラフ画像のURL
     """
+    print("reply_message:", message)
+    print("reply_image_url:", image_url)
     reply_line_text_and_image_message(reply_token, message, image_url)
     return "LINEにテキストと画像を返信しました。"
 
