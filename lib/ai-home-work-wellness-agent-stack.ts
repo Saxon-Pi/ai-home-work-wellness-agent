@@ -1,6 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
-//import * as timestream from "aws-cdk-lib/aws-timestream";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import * as iot from "aws-cdk-lib/aws-iot";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -11,6 +11,8 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 
+//import * as timestream from "aws-cdk-lib/aws-timestream";
+
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -19,6 +21,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // Secrets Manager
     // =====================================================
 
+    // デプロイ → コンソールからシークレットの登録 が必要
     // LINE 通知用トークン
     const lineBotSecret = new secretsmanager.Secret(this, "LineBotSecret", {
       secretName: "ai-home-work-wellness-agent/line-chat-bot",
@@ -26,6 +29,17 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       secretObjectValue: {
         LINE_CHANNEL_ACCESS_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
         LINE_TO_USER_ID: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+      },
+    });
+
+    // Google Calendar 用トークン
+    const googleCalendarSecret = new secretsmanager.Secret(this, "GoogleCalendarOAuthSecret", {
+      secretName: "ai-home-work-wellness-agent/google-calendar-oauth",
+      description: "Google Calendar OAuth credentials for chat agent",
+      secretObjectValue: {
+        GOOGLE_CLIENT_ID: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+        GOOGLE_CLIENT_SECRET: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
+        GOOGLE_REFRESH_TOKEN: cdk.SecretValue.unsafePlainText("REPLACE_ME"),
       },
     });
 
@@ -103,6 +117,64 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     });
 
     // =====================================================
+    // S3
+    // =====================================================
+
+    // Athena クエリ結果とグラフ画像格納用バケット
+    const reportArtifactsBucket = new s3.Bucket(this, "ReportArtifactsBucket", {
+      bucketName: undefined,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+
+    // =====================================================
+    // Athena
+    // =====================================================
+
+    /* 
+      データソース作成と権限周りで沼ったので Grafana 用に作成したデータソースを流用する
+      作成手順は　Grafanaデータ可視化手順書.md　を参照
+    */
+
+    // // Athena の DB Connector はコンソールから作成する
+    // // Amazon Athena > データソースとカタログ > データソースの作成
+    // // - データソースを選択: Amazon DynamoDB
+    // // - データソース名: dynamodb_datasource_report2
+    // // - Glue Data Catalog IAM role: arn:aws:iam::<account-id>:role/<AthenaDynamoDataSourceRoleの名称>
+    // // - Amazon S3: s3://aihomeworkwellnessagentst-reportartifactsbucket219-zpdmzth7yhfj/athena-results
+
+    // // Lake Formation 絡みでデータソース作成が失敗する場合は、ユーザとロールを admin 登録する
+    // // Lake Formation > Administrative roles and tasks > Data lake administrators
+
+    // const athenaDynamoDataSourceRole = new iam.Role(this, "AthenaDynamoDataSourceRole", {
+    //   assumedBy: new iam.CompositePrincipal(
+    //     new iam.ServicePrincipal("athena.amazonaws.com"),
+    //     new iam.ServicePrincipal("lakeformation.amazonaws.com"),
+    //   ),
+    // });
+    // metricsTable.grantReadData(athenaDynamoDataSourceRole);
+    // reportArtifactsBucket.grantReadWrite(athenaDynamoDataSourceRole);
+
+    // athenaDynamoDataSourceRole.addToPolicy(
+    //   new iam.PolicyStatement({
+    //     actions: ["s3:ListBucket", "s3:GetBucketLocation"],
+    //     resources: [reportArtifactsBucket.bucketArn],
+    //   })
+    // );
+
+    // athenaDynamoDataSourceRole.addToPolicy(
+    //   new iam.PolicyStatement({
+    //     actions: [
+    //       "s3:GetObject",
+    //       "s3:PutObject",
+    //       "s3:DeleteObject",
+    //     ],
+    //     resources: [`${reportArtifactsBucket.bucketArn}/*`],
+    //   })
+    // );
+
+    // =====================================================
     // Lambda
     // =====================================================
 
@@ -159,12 +231,16 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
+        GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
+        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
+        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
       },
     });
 
     metricsTable.grantReadData(wellnessAgentFn);
     agentStateTable.grantReadWriteData(wellnessAgentFn);
     lineBotSecret.grantRead(wellnessAgentFn);
+    googleCalendarSecret.grantRead(wellnessAgentFn);
 
     wellnessAgentFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -191,7 +267,8 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset("services/chat_agent"),
-      timeout: cdk.Duration.seconds(60),
+      timeout: cdk.Duration.seconds(180), // グラフ作成時のタイムアウト対策
+      memorySize: 1024,                   // グラフ作成のためスペックアップ
       layers: [strandsLayer, commonLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
@@ -201,12 +278,23 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
+        GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
+        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
+        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
+        ATHENA_CATALOG: "dynamodb_datasource",
+        ATHENA_DATABASE: "default",
+        ATHENA_TABLE: "room_metrics",
+        ATHENA_OUTPUT_LOCATION: `s3://${reportArtifactsBucket.bucketName}/athena-results/`,
+        REPORT_BUCKET_NAME: reportArtifactsBucket.bucketName,
+        MPLCONFIGDIR: "/tmp/matplotlib",
       },
     });
 
     metricsTable.grantReadData(lineChatHandlerFn);
     agentStateTable.grantReadWriteData(lineChatHandlerFn);
     lineBotSecret.grantRead(lineChatHandlerFn);
+    googleCalendarSecret.grantRead(lineChatHandlerFn);
+    reportArtifactsBucket.grantReadWrite(lineChatHandlerFn);
 
     lineChatHandlerFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -225,6 +313,53 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
           "aws-marketplace:Subscribe",
         ],
         resources: ["*"],
+      })
+    );
+
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetQueryResults",
+          "athena:GetDataCatalog",
+          "athena:ListDataCatalogs",
+          "athena:ListDatabases",
+          "athena:ListTableMetadata",
+          "athena:GetTableMetadata",
+          "athena:GetWorkGroup",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "glue:GetDatabase",
+          "glue:GetTable",
+          "glue:GetPartitions",
+          "glue:GetPartition",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    // Athena の dynamodb_datasource が裏で Federated Query connector Lambda 呼ぶため追加
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "lambda:InvokeFunction",
+        ],
+        resources: ["*"], // TODO: DynamoDB connector Lambda の ARN に絞る
+      })
+    );
+
+    // bucket.grantReadWrite だと ListBucket は含まれないことがあるため追加
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ListBucket"],
+        resources: [reportArtifactsBucket.bucketArn],
       })
     );
 

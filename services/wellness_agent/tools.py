@@ -1,5 +1,12 @@
 """
-Strands Agent がデータ取得や LINE 通知をするために使用するツール群
+室内環境データの取得、LINE メッセージ生成、LINE へのメッセージ送信 を行うために使用するツール群
+これらのツールは、定期実行される Wellness Agent から利用されることを想定している
+
+Agent はこれらのツールを使い、以下の流れで動作する
+- 現在の室内環境を確認
+- 室内環境に応じたアドバイスを生成
+- LINE に送信するメッセージ本文を構築
+- 最終的な通知を LINE に送信
 """
 
 from typing import Any, Dict
@@ -11,6 +18,10 @@ from common.core import ( # Lambda Layer 前提のパス
     LOOKBACK_MINUTES, # データ取得期間 (デフォルトは1時間)
     # 直近1時間の室内環境サマリを取得する関数 (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary,
+    # Google Calendar 連携用関数
+    get_calendar_context,
+    # 天気予報連携用関数
+    get_weather_context,
     # Agent の回答を基に LINE メッセージを作成する関数
     format_line_message,
     # LINE メッセージを送信する関数
@@ -18,17 +29,83 @@ from common.core import ( # Lambda Layer 前提のパス
 )
 
 # 直近1時間の室内環境データを取得し、要約した結果を返すツール
-# 出力は最新値、平均値、最大値、CO2トレンド(下降/安定/上昇)、環境ステータス(良好/注意/用対応)を含む
 @tool
 def get_environment_summary_tool() -> Dict[str, Any]:
+    """
+    直近1時間の室内環境データを取得するツールです。
+    室内環境に関する質問の回答やアドバイスをする際に使用してください。
+    
+    以下の情報を返します:
+    - summary:
+        - latest: 最新の CO2濃度、温度、湿度
+        - avg_1h: 直近1時間の平均値
+        - max_1h: 直近1時間の最大値
+        - co2_trend: CO2濃度 の傾向 (rising / stable / falling)
+    - env_status:
+        - status: 室内環境ステータス (good / warning / alert)
+        - label: 表示用ラベル (良好 / 注意 / 要対応)
+    """
     return get_environment_summary(
         device_id=DEVICE_ID,
         lookback_minutes=LOOKBACK_MINUTES,
     )
 
+# Google Calendar から今後の予定を取得するツール
+@tool
+def get_calendar_context_tool() -> Dict[str, Any]:
+    """
+    Google Calendar から今後の予定を取得するツールです。
+    会議前の行動提案や、スケジュールに応じたアドバイスをする際に使用してください。
+
+    以下の情報を返します:
+    - has_event_within_1h: 直近1時間以内に予定があるか
+    - upcoming_events: 今後の予定（開始時刻が近い順で最大3件）
+    """
+    return get_calendar_context()
+
+@tool
+def get_weather_context_tool(target_datetime: str) -> Dict[str, Any]:
+    """
+    指定日時の天気情報と季節に関する健康アラート情報を取得するツールです。
+    夕方、夜、明日の朝など、特定の時間帯の天気や過ごし方についてアドバイスする際に使用してください。
+
+    引数:
+    - target_datetime: ISO 8601 形式の日時文字列
+      例: 2026-04-20T18:00:00+09:00
+
+    以下の情報を返します:
+    - weather:
+        - condition: 指定日時に近い時間の天気
+        - temperature_c: 指定日時に近い時間の外気温
+        - humidity: 指定日時に近い時間の外気湿度
+        - temp_max_c: その日の最高気温
+        - temp_min_c: その日の最低気温
+    - season_context:
+        - season: summer / winter / other
+        - month: 対象日時の月
+    - health_alerts:
+        - heat_risk: 熱中症対策が必要か
+        - dryness_risk: 乾燥対策が必要か
+    """
+    return get_weather_context(target_datetime=target_datetime)
+
+
 # 室内環境サマリと Agent が生成したアドバイスを組み合わせて、LINE メッセージを作成するツール
 @tool
 def format_line_message_tool(advice: str) -> Dict[str, Any]:
+    """
+    室内環境サマリと Agent が生成したアドバイス文を組み合わせて、
+    LINE 送信用のメッセージ本文を生成するツールです。
+    ユーザ向けの最終通知メッセージを作成する際に使用してください。
+
+    引数:
+    - advice: Agent が生成した日本語のアドバイス文
+
+    以下の情報を返します:
+    - line_message: LINE に送信する完成済みメッセージ
+    - summary: 室内環境サマリ
+    - env_status: 室内環境ステータス
+    """
     result = get_environment_summary(
         device_id=DEVICE_ID,
         lookback_minutes=LOOKBACK_MINUTES,
@@ -56,11 +133,13 @@ def format_line_message_tool(advice: str) -> Dict[str, Any]:
 # 指定されたメッセージを LINE に送信するツール
 @tool
 def send_line_message_tool(message: str) -> str:
-    send_line_message(message)
-    return "LINEにメッセージを送信しました。"
+    """
+    LINE ユーザに指定されたメッセージを送信するツールです。
+    定期通知の最終ステップで使用してください。
 
-# LINE に返信するツール (replyToken)
-@tool
-def reply_line_message_tool(reply_token: str, message: str) -> str:
-    reply_line_message(reply_token, message)
-    return "LINEに返信しました。"
+    引数:
+    - message: 信する最終メッセージ本文
+    """
+    print("send_message:", message)
+    send_line_message(message)
+    return "LINE にメッセージを送信しました。"

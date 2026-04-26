@@ -16,6 +16,10 @@ from strands.models import BedrockModel
 from tools import (
     # 直近1時間の室内環境データのサマリーを作成するツール (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary_tool,
+    # Google Calendar から今後の予定を取得するツール
+    get_calendar_context_tool,
+    # Open-Meteo から天気情報を取得するツール
+    get_weather_context_tool,
     # 室内環境サマリと Agent が生成したアドバイスを組み合わせて、LINE メッセージを作成するツール
     format_line_message_tool,
     # 指定されたメッセージを LINE に送信するツール
@@ -28,7 +32,7 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 model = BedrockModel(
     model_id=BEDROCK_MODEL_ID,
     region_name=BEDROCK_REGION,
-    temperature=0.3,
+    temperature=0.4,
 )
 
 SYSTEM_PROMPT = """
@@ -42,23 +46,36 @@ SYSTEM_PROMPT = """
 [手順]
 以下の手順でツールを利用してください。
 - まず get_environment_summary_tool を使って、現在の室内環境を確認する
-- 次に 室内環境サマリをもとに [アドバイスのルール] に従い、回答を生成する
+- 会議など、予定前後の行動や休憩タイミングに関してアドバイスができる場合は、get_calendar_context_tool を使ってスケジュールを確認する
+- 天気、換気、外気温、体調管理に関してアドバイスができる場合は、get_weather_context_tool を使って適切な日時の天気を確認する
+- 次に 室内環境サマリをもとに [回答の方針] に従い、回答を生成する
 - その後 format_line_message_tool を使って LINE メッセージを作成する
 - 最後に send_line_message_tool を使ってメッセージを送信する
 
-[アドバイスのルール]
+[回答の方針]
 - 必ず日本語の文章を生成すること
-- 憶測はせず、必ずツールの実行結果に基づいたアドバイスを生成すること
-- 2〜4文程度の簡潔な文章とすること
+- 室内環境データやスケジュール情報、天気情報の憶測はせず、必ずツールの実行結果を利用すること
+- 室内環境や季節、天気情報をもとに、ユーザが快適かつ効率的に作業できるような気分転換、体調管理の方法の提案が望ましい
+- ユーザのスケジュールに合わせた、作業効率の向上に効果的かつ実行しやすいアクションの提案が望ましい
+- 2〜5文程度の簡潔な文章とすること
 - 不安を煽りすぎず、自然な内容とすること
 - 必要に応じて換気、水分補給、休憩、室温調整などを提案すること
-- 数値の異常（CO2や温度など）がある場合は優先的に言及すること
+
+[天気に関する補足]
+- 通知時点の外気状況を見る場合は、現在時刻に近い日時を get_weather_context_tool に指定する
+- 朝、昼、夕方、夜などの時間帯について考慮が必要な場合は、以下を目安に解釈してよい
+  - 朝: 08:00
+  - 昼: 12:00
+  - 夕方: 18:00
+  - 夜: 21:00
 """
 
 wellness_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,
+        get_calendar_context_tool,
+        get_weather_context_tool,
         format_line_message_tool,
         send_line_message_tool,
     ],
