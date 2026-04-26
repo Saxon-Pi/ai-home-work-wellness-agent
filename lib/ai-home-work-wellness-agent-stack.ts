@@ -1,6 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
-//import * as timestream from "aws-cdk-lib/aws-timestream";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import * as iot from "aws-cdk-lib/aws-iot";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -10,6 +10,8 @@ import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
+
+//import * as timestream from "aws-cdk-lib/aws-timestream";
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -113,6 +115,53 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+
+    // =====================================================
+    // S3
+    // =====================================================
+
+    // Athena クエリ結果とグラフ画像格納用バケット
+    const reportArtifactsBucket = new s3.Bucket(this, "ReportArtifactsBucket", {
+      bucketName: undefined,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+
+    // =====================================================
+    // Athena
+    // =====================================================
+
+    // Athena の DB Connector はコンソールから作成する
+    // Amazon Athena > データソースとカタログ > データソースの作成
+    // - データソースを選択: Amazon DynamoDB
+    // - データソース名: dynamodb_datasource_report
+    // - Glue Data Catalog IAM role: arn:aws:iam::<account-id>:role/<AthenaDynamoDataSourceRoleの名称>
+    // - Amazon S3: s3://aihomeworkwellnessagentst-reportartifactsbucket219-zpdmzth7yhfj/athena-results
+
+    const athenaDynamoDataSourceRole = new iam.Role(this, "AthenaDynamoDataSourceRole", {
+      assumedBy: new iam.ServicePrincipal("athena.amazonaws.com"),
+    });
+    metricsTable.grantReadData(athenaDynamoDataSourceRole);
+    reportArtifactsBucket.grantReadWrite(athenaDynamoDataSourceRole);
+
+    athenaDynamoDataSourceRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ListBucket", "s3:GetBucketLocation"],
+        resources: [reportArtifactsBucket.bucketArn],
+      })
+    );
+
+    athenaDynamoDataSourceRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+        ],
+        resources: [`${reportArtifactsBucket.bucketArn}/*`],
+      })
+    );
 
     // =====================================================
     // Lambda
@@ -220,6 +269,11 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
         WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
         WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
+        ATHENA_CATALOG: "dynamodb_datasource",
+        ATHENA_DATABASE: "default",
+        ATHENA_TABLE: "room_metrics",
+        ATHENA_OUTPUT_LOCATION: `s3://${reportArtifactsBucket.bucketName}/athena-results/`,
+        REPORT_BUCKET_NAME: reportArtifactsBucket.bucketName,
       },
     });
 
@@ -227,6 +281,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     agentStateTable.grantReadWriteData(lineChatHandlerFn);
     lineBotSecret.grantRead(lineChatHandlerFn);
     googleCalendarSecret.grantRead(lineChatHandlerFn);
+    reportArtifactsBucket.grantReadWrite(lineChatHandlerFn);
 
     lineChatHandlerFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -245,6 +300,53 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
           "aws-marketplace:Subscribe",
         ],
         resources: ["*"],
+      })
+    );
+
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetQueryResults",
+          "athena:GetDataCatalog",
+          "athena:ListDataCatalogs",
+          "athena:ListDatabases",
+          "athena:ListTableMetadata",
+          "athena:GetTableMetadata",
+          "athena:GetWorkGroup",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "glue:GetDatabase",
+          "glue:GetTable",
+          "glue:GetPartitions",
+          "glue:GetPartition",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    // Athena の dynamodb_datasource が裏で Federated Query connector Lambda 呼ぶため追加
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "lambda:InvokeFunction",
+        ],
+        resources: ["*"], // TODO: DynamoDB connector Lambda の ARN に絞る
+      })
+    );
+
+    // bucket.grantReadWrite だと ListBucket は含まれないことがあるため追加
+    lineChatHandlerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ListBucket"],
+        resources: [reportArtifactsBucket.bucketArn],
       })
     );
 
