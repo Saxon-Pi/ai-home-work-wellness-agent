@@ -5,6 +5,9 @@
 - [MCP化の方針](#mcp化の方針)
 - [システム構成](#システム構成)
 - [ツール分類 (MCP化要否)](#ツール分類-mcp化要否)
+- [MCP 通信方式](#mcp-通信方式)
+- [エラーハンドリング方針](#エラーハンドリング方針)
+- [作業ステップ](#作業ステップ)
 
 ---
 
@@ -114,19 +117,66 @@ MCP Server は以下に配置することができる
 
 ---
 
-## アーキテクチャイメージ
+# MCP 通信方式
+- Agent から MCP Server へは HTTP 経由でリクエストを送信する
+- MCP Server は JSON 形式で結果を返す
+
+※ MCPの正体 = REST API (大体そんな感じ)
+```json
+例:
+POST /tools/get_weather_context
+
+Request:
+{
+  "target_datetime": "2026-04-27T08:00:00+09:00"
+}
+
+Response:
+{
+  "weather": "晴れ",
+  "temperature": 24
+}
+```
 
 ---
 
-## 作業ステップ
+# エラーハンドリング方針
+- MCP Server 側で例外をキャッチし、構造化されたエラーを返す
+- Agent はツール失敗時にフォールバックする
 
-### 1. MCP Server 作成
-MCP Server 作る（tools移す）
+```json
+例:
+{
+  "ok": false,
+  "error": "Athena query failed"
+}
+```
 
-### 2. Agent の MCP 連携
-chat_agent から MCP 呼ぶ
+ツール失敗時の Agent の挙動は以下のイメージ
+- グラフ生成失敗 → テキストのみで回答
+- Calendar失敗 → 天気のみで回答
 
-### 3. 既存 tools 削除
-tools.py 削除 or 薄くする
+---
+
+# 作業ステップ
+MCP化による不具合発生と混乱を避けるため、以下のステップで進めていく
+
+## 1. MCP Server 作成
+- FastAPI / Lambda handler でエンドポイント作成
+- tools.py のロジックを移植
+
+## 2. 低負荷ツールで接続確認
+- get_weather_context_tool を MCP化
+- Agentから呼べることを確認
+
+## 3. 高負荷ツールで接続確認
+- generate_sensor_chart_report_tool を MCP化
+- Agentから呼べることを確認
+
+## 4. Agent 側の tools 差し替え
+- tools.py → MCP 呼び出しへ変更
+
+## 5. 不要コード整理
+- tools.py を削除 or ラッパー化
 
 ---
