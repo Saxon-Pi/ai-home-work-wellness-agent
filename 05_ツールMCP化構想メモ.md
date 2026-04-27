@@ -1,13 +1,23 @@
 # ツール MCP化構想メモ
 
 - [ツール MCP化構想メモ](#ツール-mcp化構想メモ)
-- [MCP化のメリット](#mcp化のメリット)
 - [MCP化の方針](#mcp化の方針)
+- [MCP化のメリット](#mcp化のメリット)
 - [システム構成](#システム構成)
 - [ツール分類 (MCP化要否)](#ツール分類-mcp化要否)
 - [MCP 通信方式](#mcp-通信方式)
 - [エラーハンドリング方針](#エラーハンドリング方針)
 - [作業ステップ](#作業ステップ)
+
+---
+
+# MCP化の方針
+- tools.py のロジックを MCP Server に移行し、Agent からはツール名ベースで呼び出す
+- core.py はそのまま利用し、MCP Server 側で呼び出す
+- Agent はツールの「説明」と「入出力」だけを認識する
+
+MCP化により Agentは「意思決定」に専念させ、  
+ツールは「処理の実行」に専念させることで、両者の責務分離を実現することができる
 
 ---
 
@@ -23,13 +33,6 @@
   - Chat Agent / 定期実行 Agent
 - 開発・デプロイの独立性が高まる
   - ツール単体で改善・スケールが可能
-
----
-
-# MCP化の方針
-- tools.py のロジックを MCP Server に移行し、Agent からはツール名ベースで呼び出す
-- core.py はそのまま利用し、MCP Server 側で呼び出す
-- Agent はツールの「説明」と「入出力」だけを認識する
 
 ---
 
@@ -101,16 +104,16 @@ MCP Server は以下に配置することができる
 
 # ツール分類 (MCP化要否)
 全てのツールを MCP化すれば良いというわけではなく、処理内容から要否の判断をすることが重要  
-今回は以下の基準で MCP化の可否を判定する
+今回は以下の基準で MCP化を判定する
 - 軽い処理は Lambda (handler.py) で実行可能なため MCP化しない
-- LINE 送信系はレイテンシを短縮するため MCP化しない
+- LINE 送信系はレイテンシ短縮のため MCP化しない
 
 ## MCP化するツール （高負荷 / 外部依存）
 - generate_sensor_chart_report_tool（Athena + matplotlib）
 - get_calendar_context_tool（外部API）
 - get_weather_context_tool（外部API）
 
-## MCP化しないツール（軽量）
+## MCP化しないツール（軽量 / LINE）
 - format_line_message_tool
 - reply_line_message_tool
 - reply_line_text_and_image_message_tool
@@ -121,20 +124,25 @@ MCP Server は以下に配置することができる
 - Agent から MCP Server へは HTTP 経由でリクエストを送信する
 - MCP Server は JSON 形式で結果を返す
 
-※ MCPの正体 = REST API (大体そんな感じ)
-```json
-例:
-POST /tools/get_weather_context
+※ MCPの正体 = REST API (大体そんな感じ)  
 
-Request:
+例: POST /tools/get_weather_context  
+
+Request:  
+```json
 {
   "target_datetime": "2026-04-27T08:00:00+09:00"
 }
+```
 
-Response:
+Response (成功時):  
+```json
 {
-  "weather": "晴れ",
-  "temperature": 24
+  "ok": true,
+  "data": {
+    "weather": "晴れ",
+    "temperature": 24
+  }
 }
 ```
 
@@ -142,19 +150,25 @@ Response:
 
 # エラーハンドリング方針
 - MCP Server 側で例外をキャッチし、構造化されたエラーを返す
+  - 一時的な外部API エラーに対しては、MCP Server 側で数回程度リトライする
 - Agent はツール失敗時にフォールバックする
 
+Response (失敗時):  
 ```json
-例:
 {
   "ok": false,
   "error": "Athena query failed"
 }
 ```
 
-ツール失敗時の Agent の挙動は以下のイメージ
+## タイムアウト設計
+- MCP Server 側は長時間処理に対応できるタイムアウト設定とする（60 ~ 180 秒程度）
+- Agent 側ではツール呼び出しのタイムアウトを考慮し、失敗時のフォールバックを実装する
+
+## ツール失敗時の Agent 挙動
+ツール失敗時は最低限の情報で回答をするような仕組みとする  
 - グラフ生成失敗 → テキストのみで回答
-- Calendar失敗 → 天気のみで回答
+- カレンダー取得失敗 → 天気のみで回答
 
 ---
 
