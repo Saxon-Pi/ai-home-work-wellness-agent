@@ -3,6 +3,7 @@
 - [ツール MCP化構想メモ](#ツール-mcp化構想メモ)
 - [MCP化の方針](#mcp化の方針)
 - [MCP化のメリット](#mcp化のメリット)
+- [アーキテクチャイメージ (chat\_agent)](#アーキテクチャイメージ-chat_agent)
 - [システム構成](#システム構成)
 - [ツール分類 (MCP化要否)](#ツール分類-mcp化要否)
 - [MCP 通信方式](#mcp-通信方式)
@@ -29,10 +30,54 @@ MCP化により Agentは「意思決定」に専念させ、
   - ツールは高負荷に対応できる環境で実行 (高メモリLambda / コンテナ)
 - 障害の影響範囲を分離できる
   - ツール失敗時も Agent はフォールバック可能
-- ツールの再利用が可能
-  - Chat Agent / 定期実行 Agent
+- ツールの再利用が可能 (管理負担軽減)
+  - 今までは Chat Agent / Wellness Agent で別々の tools.py を実行していたが、MCP化後はツールが共通化される
 - 開発・デプロイの独立性が高まる
   - ツール単体で改善・スケールが可能
+
+---
+
+# アーキテクチャイメージ (chat_agent)
+```mermaid
+flowchart LR
+
+    subgraph Client
+        User[LINE User]
+    end
+
+    subgraph AWS
+        API[API Gateway]
+        Handler["lineChatHandlerFn (Orchestrator)"]
+        MCP["MCP Server Lambda (Tool Executor)"]
+        Core[core.py]
+    end
+
+    subgraph AI
+        Agent["Bedrock Agent (Decision Maker)"]
+    end
+
+    subgraph ExternalServices
+        Weather[Weather API]
+        Calendar[Google Calendar]
+        Athena[Athena]
+    end
+
+    subgraph Processing
+        Plot[matplotlib]
+    end
+
+    User --> API --> Handler
+    Handler <--> Agent
+    Handler <--> MCP
+    MCP --> Core
+
+    Core --> Weather
+    Core --> Calendar
+    Core --> Athena
+    Core --> Plot
+
+    Handler --> User
+```
 
 ---
 
@@ -44,7 +89,7 @@ MCP化により Agentは「意思決定」に専念させ、
 from tools import get_weather_context_tool
 ```
 
-フローは以下のイメージ (chat_agentを想定)  
+フローは以下のイメージ (chat_agent)  
 ```
 API Gateway  
   ↓  
@@ -71,7 +116,7 @@ agent = Agent(
 )
 ```
 
-フローは以下のイメージ (chat_agentを想定)  
+フローは以下のイメージ (chat_agent)  
 ```
 API Gateway  
   ↓  

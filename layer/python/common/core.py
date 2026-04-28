@@ -21,16 +21,16 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-TABLE_NAME = os.environ["METRICS_TABLE_NAME"]                    # センサデータテーブル
-AGENT_STATE_TABLE_NAME = os.environ["AGENT_STATE_TABLE_NAME"]    # ステータステーブル
-DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1")          # デバイスID (PK)
-LOOKBACK_MINUTES = int(os.environ.get("LOOKBACK_MINUTES", "60")) # データ取得期間 (min)
+TABLE_NAME = os.environ.get("METRICS_TABLE_NAME")                 # センサデータテーブル
+AGENT_STATE_TABLE_NAME = os.environ.get("AGENT_STATE_TABLE_NAME") # ステータステーブル
+DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1")           # デバイスID (PK)
+LOOKBACK_MINUTES = int(os.environ.get("LOOKBACK_MINUTES", "60"))  # データ取得期間 (min)
 
-WEATHER_LATITUDE = os.environ.get("WEATHER_LATITUDE")            # 緯度 (天気取得用)
-WEATHER_LONGITUDE = os.environ.get("WEATHER_LONGITUDE")          # 経度 (天気取得用)
+WEATHER_LATITUDE = os.environ.get("WEATHER_LATITUDE")             # 緯度 (天気取得用)
+WEATHER_LONGITUDE = os.environ.get("WEATHER_LONGITUDE")           # 経度 (天気取得用)
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
-BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID")
 
 ATHENA_CATALOG = os.environ.get("ATHENA_CATALOG", "dynamodb_datasource")
 ATHENA_DATABASE = os.environ.get("ATHENA_DATABASE")
@@ -54,8 +54,8 @@ JST = timezone(timedelta(hours=9))
 
 # シークレットのキャッシュ
 secretsmanager = boto3.client("secretsmanager")
-LINE_SECRET_NAME = os.environ["LINE_SECRET_NAME"]
-GOOGLE_CALENDAR_SECRET_NAME = os.environ["GOOGLE_CALENDAR_SECRET_NAME"]
+LINE_SECRET_NAME = os.environ.get("LINE_SECRET_NAME")
+GOOGLE_CALENDAR_SECRET_NAME = os.environ.get("GOOGLE_CALENDAR_SECRET_NAME")
 line_config_cache = None
 google_oauth_cache: Optional[Dict[str, str]] = None
 
