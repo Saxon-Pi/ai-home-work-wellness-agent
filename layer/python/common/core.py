@@ -17,10 +17,6 @@ from io import BytesIO
 import boto3
 from boto3.dynamodb.conditions import Key
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 TABLE_NAME = os.environ.get("METRICS_TABLE_NAME")                 # センサデータテーブル
 AGENT_STATE_TABLE_NAME = os.environ.get("AGENT_STATE_TABLE_NAME") # ステータステーブル
 DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1")           # デバイスID (PK)
@@ -38,26 +34,47 @@ ATHENA_TABLE = os.environ.get("ATHENA_TABLE")
 ATHENA_OUTPUT_LOCATION = os.environ.get("ATHENA_OUTPUT_LOCATION")
 REPORT_BUCKET_NAME = os.environ.get("REPORT_BUCKET_NAME")
 
-dynamodb = boto3.resource("dynamodb")
-athena = boto3.client("athena")
-s3_client = boto3.client("s3")
-
-table = dynamodb.Table(TABLE_NAME)
-agent_state_table = dynamodb.Table(AGENT_STATE_TABLE_NAME)
-
-bedrock_runtime = boto3.client(
-    "bedrock-runtime",
-    region_name=BEDROCK_REGION,
-)
-
 JST = timezone(timedelta(hours=9))
 
 # シークレットのキャッシュ
-secretsmanager = boto3.client("secretsmanager")
 LINE_SECRET_NAME = os.environ.get("LINE_SECRET_NAME")
 GOOGLE_CALENDAR_SECRET_NAME = os.environ.get("GOOGLE_CALENDAR_SECRET_NAME")
 line_config_cache = None
 google_oauth_cache: Optional[Dict[str, str]] = None
+
+# =====================================================
+# core.py import 時に関係ない AWSクライアントを初期化しないよう関数化
+# =====================================================
+
+def require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set")
+    return value
+
+def get_dynamodb_resource():
+    return boto3.resource("dynamodb")
+
+def get_athena_client():
+    return boto3.client("athena")
+
+def get_s3_client():
+    return boto3.client("s3")
+
+def get_secretsmanager_client():
+    return boto3.client("secretsmanager")
+
+def get_metrics_table():
+    return get_dynamodb_resource().Table(require_env("METRICS_TABLE_NAME"))
+
+def get_agent_state_table():
+    return get_dynamodb_resource().Table(require_env("AGENT_STATE_TABLE_NAME"))
+
+def get_bedrock_runtime_client():
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=os.environ.get("BEDROCK_REGION", "ap-northeast-1"),
+    )
 
 # =====================================================
 # 室内環境データの取得
@@ -65,6 +82,7 @@ google_oauth_cache: Optional[Dict[str, str]] = None
 
 # 前回の通知情報（室内環境ステータスなど）を保存する
 def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: int) -> None:
+    agent_state_table = get_agent_state_table()
     agent_state_table.put_item(
         Item={
             "device_id": device_id,
@@ -77,6 +95,7 @@ def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: 
 # 前回の通知情報（室内環境ステータスなど）を取得する
 def get_last_agent_state(device_id: str) -> Dict[str, Any] | None:
     # 主キー完全一致で 1レコード だけ取得
+    agent_state_table = get_agent_state_table()
     response = agent_state_table.get_item(
         Key={"device_id": device_id}
     )
@@ -89,6 +108,7 @@ def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[D
     from_ms = now_ms - (lookback_minutes * 60 * 1000)
 
     # Dynamo DB からデータ取得
+    table = get_metrics_table()
     response = table.query(
         KeyConditionExpression=(
             Key("device_id").eq(device_id) &             # デバイスID
@@ -233,8 +253,11 @@ def get_line_config() -> Dict[str, str]:
     # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
     if line_config_cache is not None:
         return line_config_cache
-
-    response = secretsmanager.get_secret_value(SecretId=LINE_SECRET_NAME)
+    
+    secretsmanager = get_secretsmanager_client()
+    response = secretsmanager.get_secret_value(
+        SecretId=require_env("LINE_SECRET_NAME")
+    )
     secret_string = response["SecretString"]
     secret = json.loads(secret_string)
 
@@ -361,8 +384,11 @@ def get_google_calendar_oauth_config() -> Dict[str, str]:
     # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
     if google_oauth_cache is not None:
         return google_oauth_cache
-
-    response = secretsmanager.get_secret_value(SecretId=GOOGLE_CALENDAR_SECRET_NAME)
+    
+    secretsmanager = get_secretsmanager_client()
+    response = secretsmanager.get_secret_value(
+        SecretId=require_env("GOOGLE_CALENDAR_SECRET_NAME")
+    )
     secret = json.loads(response["SecretString"])
 
     google_oauth_cache = {
@@ -897,6 +923,8 @@ def require_report_config() -> Dict[str, str]:
 
 # Athena クエリが完了するまで待機する
 def wait_for_athena_query(query_execution_id: str, poll_seconds: float = 1.0) -> None:
+    athena = get_athena_client()
+
     while True:
         # クエリ実行状況の取得
         response = athena.get_query_execution(QueryExecutionId=query_execution_id)
@@ -935,6 +963,7 @@ def run_athena_query_for_sensor_history(period: str) -> List[Dict[str, Any]]:
     """.strip()
 
     # クエリ実行
+    athena = get_athena_client()
     response = athena.start_query_execution(
         QueryString=query,
         QueryExecutionContext={
@@ -1105,6 +1134,11 @@ def build_chart_dataset(rows: List[Dict[str, Any]], period: str) -> Dict[str, An
 
 # matplotlib でクエリデータからグラフ画像を作成する
 def build_sensor_chart_image(chart_data: Dict[str, Any], period: str) -> bytes:
+    # 他ツールの core.py import 高速化のため matplotlib はここで import
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     series = chart_data["series"]
 
     x_labels = [p["time"] for p in series["co2_ppm"]]
@@ -1154,6 +1188,7 @@ def upload_report_image_to_s3(image_bytes: bytes, period: str) -> Dict[str, str]
     today_str = datetime.now(JST).strftime("%Y-%m-%d")
     filename = f"sensor_report_{period}_{uuid.uuid4().hex[:8]}.png"
     s3_key = f"reports/{today_str}/{filename}"
+    s3_client = get_s3_client()
     s3_client.put_object(
         Bucket=config_env["report_bucket_name"],
         Key=s3_key,
