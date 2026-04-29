@@ -2,12 +2,15 @@ from typing import Any, Dict
 
 from mcp.server.fastmcp import FastMCP
 
-from common.core import get_weather_context
+from common.core import (
+    get_weather_context,
+    get_calendar_context,
+)
 
 mcp = FastMCP("wellness-tools")
 
 
-@mcp.tool()
+@mcp.tool(description="指定日時の天気と健康アラートを取得する")
 def get_weather_context_tool(target_datetime: str) -> Dict[str, Any]:
     """
     指定日時の天気情報と季節に関する健康アラート情報を取得するツールです。
@@ -32,6 +35,18 @@ def get_weather_context_tool(target_datetime: str) -> Dict[str, Any]:
         - dryness_risk: 乾燥対策が必要か
     """
     return get_weather_context(target_datetime=target_datetime)
+
+@mcp.tool(description="Google Calendar から今後の予定を取得する")
+def get_calendar_context_tool() -> Dict[str, Any]:
+    """
+    Google Calendar から今後の予定を取得するツールです。
+    会議前の行動提案や、スケジュールに応じたアドバイスをする際に使用してください。
+
+    以下の情報を返します:
+    - has_event_within_1h: 直近1時間以内に予定があるか
+    - upcoming_events: 今後の予定（開始時刻が近い順で最大3件）
+    """
+    return get_calendar_context()
 
 
 if __name__ == "__main__":

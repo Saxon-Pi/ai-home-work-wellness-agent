@@ -8,8 +8,6 @@ from strands.tools.mcp import MCPClient
 from tools import (
     # 直近1時間の室内環境データのサマリーを作成するツール (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary_tool,
-    # Google Calendar から今後の予定を取得するツール
-    get_calendar_context_tool,
     # 室内環境データからグラフレポートを生成するツール
     generate_sensor_chart_report_tool,
     # LINE に返信するツール (replyToken)
@@ -21,20 +19,26 @@ from tools import (
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
 BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
-# Open-Meteo から天気情報を取得する MCP ツール
-weather_mcp_client = MCPClient(
+# MCP Client
+mcp_env = {
+    **os.environ,
+    "PYTHONPATH": "/opt/python",
+}
+
+mcp_tools_client = MCPClient(
     lambda: stdio_client(
         StdioServerParameters(
             command="python",
             args=["mcp_server/server.py"],
-            env={
-                "PYTHONPATH": "/opt/python",
-                "WEATHER_LATITUDE": os.environ["WEATHER_LATITUDE"],
-                "WEATHER_LONGITUDE": os.environ["WEATHER_LONGITUDE"],
-            },
+            env=mcp_env,
         )
     ),
-    tool_filters={"allowed": ["get_weather_context_tool"]},
+    tool_filters={
+        "allowed": [
+            "get_weather_context_tool",  # 天気予報取得ツール
+            "get_calendar_context_tool", # カレンダー取得ツール
+        ]
+    },
 )
 
 model = BedrockModel(
@@ -94,11 +98,11 @@ chat_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,
-        get_calendar_context_tool,
-        reply_line_message_tool,
         generate_sensor_chart_report_tool,
+        reply_line_message_tool,
         reply_line_text_and_image_message_tool,
-        weather_mcp_client,
+        # MCP tools
+        mcp_tools_client,
     ],
     system_prompt=SYSTEM_PROMPT,
 )
