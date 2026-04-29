@@ -8,8 +8,6 @@ from strands.tools.mcp import MCPClient
 from tools import (
     # 直近1時間の室内環境データのサマリーを作成するツール (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary_tool,
-    # 室内環境データからグラフレポートを生成するツール
-    generate_sensor_chart_report_tool,
     # LINE に返信するツール (replyToken)
     reply_line_message_tool,
     # テキストと画像を LINE に同時返信するツール
@@ -37,6 +35,7 @@ mcp_tools_client = MCPClient(
         "allowed": [
             "get_weather_context_tool",  # 天気予報取得ツール
             "get_calendar_context_tool", # カレンダー取得ツール
+            "generate_sensor_chart_report_tool", # グラフ生成ツール
         ]
     },
 )
@@ -98,7 +97,6 @@ chat_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,
-        generate_sensor_chart_report_tool,
         reply_line_message_tool,
         reply_line_text_and_image_message_tool,
         # MCP tools

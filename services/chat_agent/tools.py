@@ -10,6 +10,7 @@ Agent はこれらのツールを使い、以下の流れで動作する
 - 最終的な返答を LINE に送信
 """
 
+import sys
 from typing import Any, Dict
 from strands import tool
 
@@ -20,12 +21,12 @@ from common.core import (
     LOOKBACK_MINUTES, # データ取得期間 (デフォルトは1時間)
     # 直近1時間の室内環境サマリを取得する関数 (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary,
-    # Google Calendar 連携用関数
-    get_calendar_context,
-    # 天気予報連携用関数
-    get_weather_context,
-    # グラフレポート作成用関数
-    generate_sensor_chart_report,
+    # # Google Calendar 連携用関数
+    # get_calendar_context,
+    # # 天気予報連携用関数
+    # get_weather_context,
+    # # グラフレポート作成用関数
+    # generate_sensor_chart_report,
     # LINE のチャットに応答する関数
     reply_line_message,
     # テキストと画像を送信する関数
@@ -57,7 +58,7 @@ def get_environment_summary_tool() -> Dict[str, Any]:
         lookback_minutes=LOOKBACK_MINUTES,
     )
 
-""" ツールの MCP化 を行ったツールはコメントアウトしている """
+""" MCP化を行ったツールはコメントアウトしている """
 # # Google Calendar から今後の予定を取得するツール
 # @tool
 # def get_calendar_context_tool() -> Dict[str, Any]:
@@ -97,21 +98,21 @@ def get_environment_summary_tool() -> Dict[str, Any]:
 #     """
 #     return get_weather_context(target_datetime=target_datetime)
 
-@tool
-def generate_sensor_chart_report_tool(period: str) -> Dict[str, Any]:
-    """
-    指定期間の室内環境データからグラフレポートを生成するツールです。
-    ユーザが室内環境の推移やグラフ表示を求めた場合に使用してください。
+# @tool
+# def generate_sensor_chart_report_tool(period: str) -> Dict[str, Any]:
+#     """
+#     指定期間の室内環境データからグラフレポートを生成するツールです。
+#     ユーザが室内環境の推移やグラフ表示を求めた場合に使用してください。
 
-    引数:
-    - period: 取得期間 (使用できる値は "1h", "1d", "7d")
+#     引数:
+#     - period: 取得期間 (使用できる値は "1h", "1d", "7d")
 
-    以下の情報を返します:
-    - image_url: 生成したグラフ画像の URL
-    - chart_data.summary_stats: CO2/温度/湿度 の 最小/最大/平均/傾向
-    - summary: グラフ生成結果のサマリ
-    """
-    return generate_sensor_chart_report(period=period)
+#     以下の情報を返します:
+#     - image_url: 生成したグラフ画像の URL
+#     - chart_data.summary_stats: CO2/温度/湿度 の 最小/最大/平均/傾向
+#     - summary: グラフ生成結果のサマリ
+#     """
+#     return generate_sensor_chart_report(period=period)
 
 # LINE に返信するツール (replyToken)
 @tool
@@ -141,10 +142,12 @@ def reply_line_text_and_image_message_tool(reply_token: str, message: str, image
     - image_url: 返信するグラフ画像のURL
     """
     print("reply_message:", message)
-    print("reply_image_url:", image_url)
+    safe_image_url = image_url.split("?")[0]
+    print(f"reply_image_url: {safe_image_url}", file=sys.stderr, flush=True)
     reply_line_text_and_image_message(reply_token, message, image_url)
     return "LINEにテキストと画像を返信しました。"
 
+""" 未使用ツール """
 # @tool
 # def reply_line_image_message_tool(reply_token: str, image_url: str) -> str:
 #     """
