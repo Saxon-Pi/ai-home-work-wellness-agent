@@ -871,17 +871,23 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
 # period を正規化する (Agentの表記ブレを吸収)
 def normalize_period(period: str) -> str:
     return {
+        # 1h
         "1h": "1h",
         "hour": "1h",
         "1hour": "1h",
+        # 1d
         "1d": "1d",
         "day": "1d",
         "1day": "1d",
+        "today": "1d",
+        "daily": "1d",
+        # 7d
         "7d": "7d",
         "7days": "7d",
         "1w": "7d",
         "week": "7d",
         "1week": "7d",
+        "weekly": "7d",
     }.get(period, period)
 
 # グラフの描画範囲に応じてデータの取得期間と集計粒度を決める

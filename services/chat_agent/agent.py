@@ -1,8 +1,6 @@
 import os
 from strands import Agent
 from strands.models import BedrockModel
-from mcp import stdio_client, StdioServerParameters
-from strands.tools.mcp import MCPClient
 
 # Agent が使用するツール
 from tools import (
@@ -12,33 +10,13 @@ from tools import (
     reply_line_message_tool,
     # テキストと画像を LINE に同時返信するツール
     reply_line_text_and_image_message_tool,
+    get_weather_context_tool,
+    get_calendar_context_tool,
+    generate_sensor_chart_report_tool,
 )
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
 BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
-
-# MCP Client
-mcp_env = {
-    **os.environ,
-    "PYTHONPATH": "/opt/python",
-}
-
-mcp_tools_client = MCPClient(
-    lambda: stdio_client(
-        StdioServerParameters(
-            command="python",
-            args=["mcp_server/server.py"],
-            env=mcp_env,
-        )
-    ),
-    tool_filters={
-        "allowed": [
-            "get_weather_context_tool",  # 天気予報取得ツール
-            "get_calendar_context_tool", # カレンダー取得ツール
-            "generate_sensor_chart_report_tool", # グラフ生成ツール
-        ]
-    },
-)
 
 model = BedrockModel(
     model_id=BEDROCK_MODEL_ID,
@@ -97,10 +75,11 @@ chat_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,
+        get_weather_context_tool,
+        get_calendar_context_tool,
+        generate_sensor_chart_report_tool,
         reply_line_message_tool,
         reply_line_text_and_image_message_tool,
-        # MCP tools
-        mcp_tools_client,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

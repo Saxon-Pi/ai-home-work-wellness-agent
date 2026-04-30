@@ -11,8 +11,13 @@ Agent はこれらのツールを使い、以下の流れで動作する
 """
 
 import sys
+import os
+import json
 from typing import Any, Dict
+import boto3
 from strands import tool
+
+lambda_client = boto3.client("lambda")
 
 # 既存の Lambda 関数から関数をインポート
 # Lambda Layer から core.py を読み込む
@@ -21,17 +26,16 @@ from common.core import (
     LOOKBACK_MINUTES, # データ取得期間 (デフォルトは1時間)
     # 直近1時間の室内環境サマリを取得する関数 (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary,
+    # LINE のチャットに応答する関数
+    reply_line_message,
+    # テキストと画像を送信する関数
+    reply_line_text_and_image_message,
     # # Google Calendar 連携用関数
     # get_calendar_context,
     # # 天気予報連携用関数
     # get_weather_context,
     # # グラフレポート作成用関数
     # generate_sensor_chart_report,
-    # LINE のチャットに応答する関数
-    reply_line_message,
-    # テキストと画像を送信する関数
-    reply_line_text_and_image_message,
-
     # # 画像のみを送信する関数
     # reply_line_image_message,
 )
@@ -57,6 +61,87 @@ def get_environment_summary_tool() -> Dict[str, Any]:
         device_id=DEVICE_ID,
         lookback_minutes=LOOKBACK_MINUTES,
     )
+
+# MCP ツール実行用 Lambda invoke ラッパー
+def invoke_mcp_tool(tool_name: str, arguments: dict) -> dict:
+    response = lambda_client.invoke(
+        FunctionName=os.environ["MCP_SERVER_FUNCTION_NAME"],
+        InvocationType="RequestResponse",
+        Payload=json.dumps({
+            "body": json.dumps({
+                "tool_name": tool_name, # ツール名
+                "arguments": arguments, # ツール引数
+            })
+        }).encode("utf-8"),
+    )
+
+    payload = json.loads(response["Payload"].read().decode("utf-8"))
+    body = json.loads(payload.get("body", "{}"))
+
+    if not body.get("ok"):
+        return {
+            "ok": False,
+            "message": body.get("error", "MCP Server tool failed"),
+        }
+
+    return body["result"]
+
+@tool
+def get_weather_context_tool(target_datetime: str) -> dict:
+    """指定日時の天気情報と健康アラート情報を取得します。"""
+    return invoke_mcp_tool(
+        "get_weather_context_tool",
+        {"target_datetime": target_datetime},
+    )
+
+@tool
+def get_calendar_context_tool() -> dict:
+    """Google Calendar から今後の予定情報を取得します。"""
+    return invoke_mcp_tool(
+        "get_calendar_context_tool",
+        {},
+    )
+
+@tool
+def generate_sensor_chart_report_tool(period: str) -> dict:
+    """指定期間の室内環境グラフレポートを生成します。"""
+    return invoke_mcp_tool(
+        "generate_sensor_chart_report_tool",
+        {"period": period},
+    )
+
+# LINE に返信するツール (replyToken)
+@tool
+def reply_line_message_tool(reply_token: str, message: str) -> str:
+    """
+    LINE ユーザにメッセージを返信するツールです。
+    最終的な回答をする際は、このツールを使用してください。
+
+    引数:
+    - reply_token: LINE の replyToken
+    - message: 返信するメッセージ本文
+    """
+    print("reply_message:", message)
+    reply_line_message(reply_token, message)
+    return "LINE にメッセージを返信しました。"
+
+@tool
+def reply_line_text_and_image_message_tool(reply_token: str, message: str, image_url: str,) -> str:
+    """
+    テキストと画像を LINE ユーザに同時返信するツールです。
+    室内環境データのグラフ画像と、そのグラフに基づく簡単なレポートや推奨アクションを
+    ユーザーへ送信する際に使用してください。
+
+    引数:
+    - reply_token: LINE Webhook イベントに含まれる replyToken
+    - message: 室内環境データの傾向や推奨アクションを含むレポート本文
+    - image_url: 返信するグラフ画像のURL
+    """
+    print("reply_message:", message)
+    safe_image_url = image_url.split("?")[0]
+    print(f"reply_image_url: {safe_image_url}", file=sys.stderr, flush=True)
+    reply_line_text_and_image_message(reply_token, message, image_url)
+    return "LINEにテキストと画像を返信しました。"
 
 """ MCP化を行ったツールはコメントアウトしている """
 # # Google Calendar から今後の予定を取得するツール
@@ -113,39 +198,6 @@ def get_environment_summary_tool() -> Dict[str, Any]:
 #     - summary: グラフ生成結果のサマリ
 #     """
 #     return generate_sensor_chart_report(period=period)
-
-# LINE に返信するツール (replyToken)
-@tool
-def reply_line_message_tool(reply_token: str, message: str) -> str:
-    """
-    LINE ユーザにメッセージを返信するツールです。
-    最終的な回答をする際は、このツールを使用してください。
-
-    引数:
-    - reply_token: LINE の replyToken
-    - message: 返信するメッセージ本文
-    """
-    print("reply_message:", message)
-    reply_line_message(reply_token, message)
-    return "LINE にメッセージを返信しました。"
-
-@tool
-def reply_line_text_and_image_message_tool(reply_token: str, message: str, image_url: str,) -> str:
-    """
-    テキストと画像を LINE ユーザに同時返信するツールです。
-    室内環境データのグラフ画像と、そのグラフに基づく簡単なレポートや推奨アクションを
-    ユーザーへ送信する際に使用してください。
-
-    引数:
-    - reply_token: LINE Webhook イベントに含まれる replyToken
-    - message: 室内環境データの傾向や推奨アクションを含むレポート本文
-    - image_url: 返信するグラフ画像のURL
-    """
-    print("reply_message:", message)
-    safe_image_url = image_url.split("?")[0]
-    print(f"reply_image_url: {safe_image_url}", file=sys.stderr, flush=True)
-    reply_line_text_and_image_message(reply_token, message, image_url)
-    return "LINEにテキストと画像を返信しました。"
 
 """ 未使用ツール """
 # @tool
