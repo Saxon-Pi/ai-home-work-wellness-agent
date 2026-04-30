@@ -6,16 +6,13 @@ from strands.models import BedrockModel
 from tools import (
     # 直近1時間の室内環境データのサマリーを作成するツール (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary_tool,
-    # Google Calendar から今後の予定を取得するツール
-    get_calendar_context_tool,
-    # Open-Meteo から天気情報を取得するツール
-    get_weather_context_tool,
-    # 室内環境データからグラフレポートを生成するツール
-    generate_sensor_chart_report_tool,
     # LINE に返信するツール (replyToken)
     reply_line_message_tool,
     # テキストと画像を LINE に同時返信するツール
     reply_line_text_and_image_message_tool,
+    get_weather_context_tool,
+    get_calendar_context_tool,
+    generate_sensor_chart_report_tool,
 )
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
@@ -66,6 +63,11 @@ reply_line_message_tool を併用しないこと。
 - 不安を煽りすぎず、自然な内容とすること
 - 必要に応じて換気、水分補給、休憩、室温調整などを提案すること
 
+[予定と天気を組み合わせる場合]
+- ユーザがスケジュールのイベントに関連した天気を質問した場合は、先に get_calendar_context_tool を使って予定時刻を確認すること
+- 予定時刻が取得できた場合は、その予定開始時刻に近い日時を target_datetime として get_weather_context_tool を使うこと
+- 例: 「明日の試験に傘は必要？」→ カレンダー確認 → 明日の試験開始時刻を取得 → その時刻の天気を確認 → 傘の要否を回答
+
 [天気に関する補足]
 - get_weather_context_tool に入力する時間帯については、以下を目安に解釈してよい
   - 朝: 08:00
@@ -78,10 +80,10 @@ chat_agent = Agent(
     model=model,
     tools=[
         get_environment_summary_tool,
-        get_calendar_context_tool,
         get_weather_context_tool,
-        reply_line_message_tool,
+        get_calendar_context_tool,
         generate_sensor_chart_report_tool,
+        reply_line_message_tool,
         reply_line_text_and_image_message_tool,
     ],
     system_prompt=SYSTEM_PROMPT,

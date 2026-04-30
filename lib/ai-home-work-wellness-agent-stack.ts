@@ -262,7 +262,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       })
     );
 
-    // Chat Agent (Strands Agent)
+    // Chat Agent (Strands Agent): Agent実行 / ツール呼び出し判断 / LINE返信
     const lineChatHandlerFn = new lambda.Function(this, "LineChatHandlerLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
@@ -278,15 +278,15 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
-        GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
-        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
-        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
-        ATHENA_CATALOG: "dynamodb_datasource",
-        ATHENA_DATABASE: "default",
-        ATHENA_TABLE: "room_metrics",
-        ATHENA_OUTPUT_LOCATION: `s3://${reportArtifactsBucket.bucketName}/athena-results/`,
-        REPORT_BUCKET_NAME: reportArtifactsBucket.bucketName,
-        MPLCONFIGDIR: "/tmp/matplotlib",
+        // GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
+        // WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
+        // WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
+        // ATHENA_CATALOG: "dynamodb_datasource",
+        // ATHENA_DATABASE: "default",
+        // ATHENA_TABLE: "room_metrics",
+        // ATHENA_OUTPUT_LOCATION: `s3://${reportArtifactsBucket.bucketName}/athena-results/`,
+        // REPORT_BUCKET_NAME: reportArtifactsBucket.bucketName,
+        // MPLCONFIGDIR: "/tmp/matplotlib",
       },
     });
 
@@ -316,7 +316,86 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       })
     );
 
-    lineChatHandlerFn.addToRolePolicy(
+    // lineChatHandlerFn.addToRolePolicy(
+    //   new iam.PolicyStatement({
+    //     actions: [
+    //       "athena:StartQueryExecution",
+    //       "athena:GetQueryExecution",
+    //       "athena:GetQueryResults",
+    //       "athena:GetDataCatalog",
+    //       "athena:ListDataCatalogs",
+    //       "athena:ListDatabases",
+    //       "athena:ListTableMetadata",
+    //       "athena:GetTableMetadata",
+    //       "athena:GetWorkGroup",
+    //     ],
+    //     resources: ["*"],
+    //   })
+    // );
+
+    // lineChatHandlerFn.addToRolePolicy(
+    //   new iam.PolicyStatement({
+    //     actions: [
+    //       "glue:GetDatabase",
+    //       "glue:GetTable",
+    //       "glue:GetPartitions",
+    //       "glue:GetPartition",
+    //     ],
+    //     resources: ["*"],
+    //   })
+    // );
+
+    // // Athena の dynamodb_datasource が裏で Federated Query connector Lambda 呼ぶため追加
+    // lineChatHandlerFn.addToRolePolicy(
+    //   new iam.PolicyStatement({
+    //     actions: [
+    //       "lambda:InvokeFunction",
+    //     ],
+    //     resources: ["*"], // TODO: DynamoDB connector Lambda の ARN に絞る
+    //   })
+    // );
+
+    // // bucket.grantReadWrite だと ListBucket は含まれないことがあるため追加
+    // lineChatHandlerFn.addToRolePolicy(
+    //   new iam.PolicyStatement({
+    //     actions: ["s3:ListBucket"],
+    //     resources: [reportArtifactsBucket.bucketArn],
+    //   })
+    // );
+
+    // MCP Server: weather / calendar / report のツール実行側
+    const mcpServerFn = new lambda.Function(this, "McpServerLambda", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset("services/mcp_server"),
+      timeout: cdk.Duration.seconds(90),
+      memorySize: 1024,
+      layers: [commonLayer],
+      environment: {
+        METRICS_TABLE_NAME: metricsTable.tableName,
+        AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
+        DEVICE_ID: "raspi-home-1",
+        LOOKBACK_MINUTES: "60",
+        LINE_SECRET_NAME: lineBotSecret.secretName,
+        GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
+        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
+        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
+        ATHENA_CATALOG: "dynamodb_datasource",
+        ATHENA_DATABASE: "default",
+        ATHENA_TABLE: "room_metrics",
+        ATHENA_OUTPUT_LOCATION: `s3://${reportArtifactsBucket.bucketName}/athena-results/`,
+        REPORT_BUCKET_NAME: reportArtifactsBucket.bucketName,
+        MPLCONFIGDIR: "/tmp/matplotlib",
+      },
+    });
+
+    metricsTable.grantReadData(mcpServerFn);
+    agentStateTable.grantReadWriteData(mcpServerFn);
+    lineBotSecret.grantRead(mcpServerFn);
+    googleCalendarSecret.grantRead(mcpServerFn);
+    reportArtifactsBucket.grantReadWrite(mcpServerFn);
+
+    mcpServerFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
           "athena:StartQueryExecution",
@@ -333,7 +412,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       })
     );
 
-    lineChatHandlerFn.addToRolePolicy(
+    mcpServerFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
           "glue:GetDatabase",
@@ -346,7 +425,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     );
 
     // Athena の dynamodb_datasource が裏で Federated Query connector Lambda 呼ぶため追加
-    lineChatHandlerFn.addToRolePolicy(
+    mcpServerFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
           "lambda:InvokeFunction",
@@ -356,11 +435,19 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     );
 
     // bucket.grantReadWrite だと ListBucket は含まれないことがあるため追加
-    lineChatHandlerFn.addToRolePolicy(
+    mcpServerFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["s3:ListBucket"],
         resources: [reportArtifactsBucket.bucketArn],
       })
+    );
+
+    // lineChatHandlerFn が mcpServerFn を呼び出す
+    mcpServerFn.grantInvoke(lineChatHandlerFn);
+    
+    lineChatHandlerFn.addEnvironment(
+      "MCP_SERVER_FUNCTION_NAME",
+      mcpServerFn.functionName
     );
 
     // =====================================================

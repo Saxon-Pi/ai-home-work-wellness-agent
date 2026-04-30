@@ -3,6 +3,7 @@
 元々の Lambda関数 (old_handler.py) で定義した関数をツールに流用する
 """
 
+import sys
 import os
 import time
 import json
@@ -17,47 +18,55 @@ from io import BytesIO
 import boto3
 from boto3.dynamodb.conditions import Key
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
-TABLE_NAME = os.environ["METRICS_TABLE_NAME"]                    # センサデータテーブル
-AGENT_STATE_TABLE_NAME = os.environ["AGENT_STATE_TABLE_NAME"]    # ステータステーブル
-DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1")          # デバイスID (PK)
-LOOKBACK_MINUTES = int(os.environ.get("LOOKBACK_MINUTES", "60")) # データ取得期間 (min)
-
-WEATHER_LATITUDE = os.environ.get("WEATHER_LATITUDE")            # 緯度 (天気取得用)
-WEATHER_LONGITUDE = os.environ.get("WEATHER_LONGITUDE")          # 経度 (天気取得用)
+TABLE_NAME = os.environ.get("METRICS_TABLE_NAME")                 # センサデータテーブル
+AGENT_STATE_TABLE_NAME = os.environ.get("AGENT_STATE_TABLE_NAME") # ステータステーブル
+DEVICE_ID = os.environ.get("DEVICE_ID", "raspi-home-1")           # デバイスID (PK)
+LOOKBACK_MINUTES = int(os.environ.get("LOOKBACK_MINUTES", "60"))  # データ取得期間 (min)
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
-BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
-
-ATHENA_CATALOG = os.environ.get("ATHENA_CATALOG", "dynamodb_datasource")
-ATHENA_DATABASE = os.environ.get("ATHENA_DATABASE")
-ATHENA_TABLE = os.environ.get("ATHENA_TABLE")
-ATHENA_OUTPUT_LOCATION = os.environ.get("ATHENA_OUTPUT_LOCATION")
-REPORT_BUCKET_NAME = os.environ.get("REPORT_BUCKET_NAME")
-
-dynamodb = boto3.resource("dynamodb")
-athena = boto3.client("athena")
-s3_client = boto3.client("s3")
-
-table = dynamodb.Table(TABLE_NAME)
-agent_state_table = dynamodb.Table(AGENT_STATE_TABLE_NAME)
-
-bedrock_runtime = boto3.client(
-    "bedrock-runtime",
-    region_name=BEDROCK_REGION,
-)
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID")
 
 JST = timezone(timedelta(hours=9))
 
 # シークレットのキャッシュ
-secretsmanager = boto3.client("secretsmanager")
-LINE_SECRET_NAME = os.environ["LINE_SECRET_NAME"]
-GOOGLE_CALENDAR_SECRET_NAME = os.environ["GOOGLE_CALENDAR_SECRET_NAME"]
+LINE_SECRET_NAME = os.environ.get("LINE_SECRET_NAME")
+GOOGLE_CALENDAR_SECRET_NAME = os.environ.get("GOOGLE_CALENDAR_SECRET_NAME")
 line_config_cache = None
 google_oauth_cache: Optional[Dict[str, str]] = None
+
+# =====================================================
+# core.py import 時に関係ない AWSクライアントを初期化しないよう関数化
+# =====================================================
+
+def require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set")
+    return value
+
+def get_dynamodb_resource():
+    return boto3.resource("dynamodb")
+
+def get_athena_client():
+    return boto3.client("athena")
+
+def get_s3_client():
+    return boto3.client("s3")
+
+def get_secretsmanager_client():
+    return boto3.client("secretsmanager")
+
+def get_metrics_table():
+    return get_dynamodb_resource().Table(require_env("METRICS_TABLE_NAME"))
+
+def get_agent_state_table():
+    return get_dynamodb_resource().Table(require_env("AGENT_STATE_TABLE_NAME"))
+
+def get_bedrock_runtime_client():
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=os.environ.get("BEDROCK_REGION", "ap-northeast-1"),
+    )
 
 # =====================================================
 # 室内環境データの取得
@@ -65,6 +74,7 @@ google_oauth_cache: Optional[Dict[str, str]] = None
 
 # 前回の通知情報（室内環境ステータスなど）を保存する
 def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: int) -> None:
+    agent_state_table = get_agent_state_table()
     agent_state_table.put_item(
         Item={
             "device_id": device_id,
@@ -77,6 +87,7 @@ def save_agent_state(device_id: str, status: str, message: str, notified_at_ms: 
 # 前回の通知情報（室内環境ステータスなど）を取得する
 def get_last_agent_state(device_id: str) -> Dict[str, Any] | None:
     # 主キー完全一致で 1レコード だけ取得
+    agent_state_table = get_agent_state_table()
     response = agent_state_table.get_item(
         Key={"device_id": device_id}
     )
@@ -89,6 +100,7 @@ def get_recent_sensor_data(device_id: str, lookback_minutes: int = 60) -> List[D
     from_ms = now_ms - (lookback_minutes * 60 * 1000)
 
     # Dynamo DB からデータ取得
+    table = get_metrics_table()
     response = table.query(
         KeyConditionExpression=(
             Key("device_id").eq(device_id) &             # デバイスID
@@ -206,7 +218,7 @@ def get_environment_summary(device_id: str, lookback_minutes: int = 60) -> Dict[
 
     if not items:
         error_message = "センサーデータが取得できませんでした。デバイスの状態を確認してください。"
-        print("error:", error_message)
+        print("error:", error_message, file=sys.stderr, flush=True)
 
         return {
             "ok": False,
@@ -233,8 +245,11 @@ def get_line_config() -> Dict[str, str]:
     # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
     if line_config_cache is not None:
         return line_config_cache
-
-    response = secretsmanager.get_secret_value(SecretId=LINE_SECRET_NAME)
+    
+    secretsmanager = get_secretsmanager_client()
+    response = secretsmanager.get_secret_value(
+        SecretId=require_env("LINE_SECRET_NAME")
+    )
     secret_string = response["SecretString"]
     secret = json.loads(secret_string)
 
@@ -315,9 +330,9 @@ def send_line_message(message: str) -> None:
 
     try:
         with urllib.request.urlopen(req) as res:
-            print("LINE response:", res.read().decode("utf-8"))
+            print("LINE response:", res.read().decode("utf-8"), file=sys.stderr, flush=True)
     except Exception as e:
-        print("LINE send error:", str(e))
+        print(f"LINE send error: {e}", file=sys.stderr, flush=True)
         raise
 
 # LINE のチャットに応答する
@@ -348,7 +363,7 @@ def reply_line_message(reply_token: str, message: str) -> None:
     )
 
     with urllib.request.urlopen(req) as res:
-        print("LINE reply response:", res.read().decode("utf-8"))
+        print("LINE reply response:", res.read().decode("utf-8"), file=sys.stderr, flush=True)
 
 # =====================================================
 # Google Calendar 連携
@@ -361,8 +376,11 @@ def get_google_calendar_oauth_config() -> Dict[str, str]:
     # トークンをキャッシュ化して　Secrets Manager 呼び出しを削減
     if google_oauth_cache is not None:
         return google_oauth_cache
-
-    response = secretsmanager.get_secret_value(SecretId=GOOGLE_CALENDAR_SECRET_NAME)
+    
+    secretsmanager = get_secretsmanager_client()
+    response = secretsmanager.get_secret_value(
+        SecretId=require_env("GOOGLE_CALENDAR_SECRET_NAME")
+    )
     secret = json.loads(response["SecretString"])
 
     google_oauth_cache = {
@@ -445,7 +463,7 @@ def fetch_google_calendar_events(
         f"{urllib.parse.urlencode(params)}"
     )
 
-    print(f"[Calendar] range: {time_min} - {time_max}")
+    print(f"[Calendar] range: {time_min} - {time_max}", file=sys.stderr, flush=True)
 
     # リクエスト
     req = urllib.request.Request(
@@ -462,13 +480,14 @@ def fetch_google_calendar_events(
             response_data = json.loads(res.read().decode("utf-8"))
 
             items = response_data.get("items", [])
-            print(f"[Calendar] events: {len(items)}")
+            print(f"[Calendar] events: {len(items)}", file=sys.stderr, flush=True)
             return items
 
     except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8")
-        print("Google Calendar fetch error:", e)
-        print("Google Calendar error body:", error_body)
+        error_body = e.read().decode("utf-8", errors="replace")
+        print(f"[Calendar] fetch error: {e}", file=sys.stderr, flush=True)
+        print(f"[Calendar] error status: {e.code}", file=sys.stderr, flush=True)
+        print(f"[Calendar] error body: {error_body}", file=sys.stderr, flush=True)
         raise
 
 # Google Calendar API の start/end を datetime に変換する
@@ -581,10 +600,6 @@ def get_calendar_context() -> Dict[str, Any]:
         return get_calendar_context_from_events(events)
 
     except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8", errors="replace")
-        print("Google Calendar fetch error:", e)
-        print("Google Calendar error status:", e.code)
-        print("Google Calendar error body:", error_body)
 
         return {
             "ok": False,
@@ -594,7 +609,7 @@ def get_calendar_context() -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print("Google Calendar fetch error:", str(e))
+        print(f"[Calendar] fetch error: {e}", file=sys.stderr, flush=True)
 
         return {
             "ok": False,
@@ -723,14 +738,14 @@ def fetch_weather_data(target_datetime: Optional[str] = None) -> Dict[str, Any]:
     }
     """
 
-    if not WEATHER_LATITUDE or not WEATHER_LONGITUDE:
-        raise RuntimeError("WEATHER_LATITUDE or WEATHER_LONGITUDE is not set")
+    weather_latitude = require_env("WEATHER_LATITUDE")
+    weather_longitude = require_env("WEATHER_LONGITUDE")
 
     target_dt = parse_target_datetime(target_datetime)
 
     params = {
-        "latitude": WEATHER_LATITUDE,
-        "longitude": WEATHER_LONGITUDE,
+        "latitude": weather_latitude,
+        "longitude": weather_longitude,
         "timezone": "Asia/Tokyo",
         "hourly": "temperature_2m,relative_humidity_2m,weather_code", # 1時間ごとの予報データ
         "daily": "temperature_2m_max,temperature_2m_min",             # 1日単位のサマリデータ
@@ -818,10 +833,10 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
 
     try:
         target_dt = parse_target_datetime(target_datetime)
-        print(f"[Weather] target: {target_dt.isoformat()}")
+        print(f"[Weather] target: {target_dt.isoformat()}", file=sys.stderr, flush=True)
 
         weather = fetch_weather_data(target_datetime=target_dt.isoformat())
-        print(f"[Weather] result: {weather['condition']}, {weather['temperature_c']}C, {weather['humidity']}%")
+        print(f"[Weather] result: {weather['condition']}, {weather['temperature_c']}C, {weather['humidity']}%", file=sys.stderr, flush=True)
 
         season_context = get_season_context(target_dt=target_dt)
         health_alerts = build_health_alerts(
@@ -837,7 +852,7 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
         }
 
     except Exception as e:
-        print("Weather fetch error:", str(e))
+        print(f"Weather fetch error: {e}", file=sys.stderr, flush=True)
         return {
             "ok": False,
             "message": "天気情報の取得に失敗しました。",
@@ -852,6 +867,28 @@ def get_weather_context(target_datetime: Optional[str] = None) -> Dict[str, Any]
 # =====================================================
 # グラフレポート作成
 # =====================================================
+
+# period を正規化する (Agentの表記ブレを吸収)
+def normalize_period(period: str) -> str:
+    return {
+        # 1h
+        "1h": "1h",
+        "hour": "1h",
+        "1hour": "1h",
+        # 1d
+        "1d": "1d",
+        "day": "1d",
+        "1day": "1d",
+        "today": "1d",
+        "daily": "1d",
+        # 7d
+        "7d": "7d",
+        "7days": "7d",
+        "1w": "7d",
+        "week": "7d",
+        "1week": "7d",
+        "weekly": "7d",
+    }.get(period, period)
 
 # グラフの描画範囲に応じてデータの取得期間と集計粒度を決める
 # (範囲は1時間、1日、7日のいずれかを選択)
@@ -878,25 +915,24 @@ def get_period_config(period: str) -> Dict[str, Any]:
 
 # Athena クエリに必要な情報をチェックする
 def require_report_config() -> Dict[str, str]:
-    if not ATHENA_DATABASE:
-        raise RuntimeError("ATHENA_DATABASE is not set")
-    if not ATHENA_TABLE:
-        raise RuntimeError("ATHENA_TABLE is not set")
-    if not ATHENA_OUTPUT_LOCATION:
-        raise RuntimeError("ATHENA_OUTPUT_LOCATION is not set")
-    if not REPORT_BUCKET_NAME:
-        raise RuntimeError("REPORT_BUCKET_NAME is not set")
+    athena_catalog = os.environ.get("ATHENA_CATALOG", "dynamodb_datasource")
+    athena_database = require_env("ATHENA_DATABASE")
+    athena_table = require_env("ATHENA_TABLE")
+    athena_output_location = require_env("ATHENA_OUTPUT_LOCATION")
+    report_bucket_name = require_env("REPORT_BUCKET_NAME")
 
     return {
-        "catalog": ATHENA_CATALOG,
-        "database": ATHENA_DATABASE,
-        "table": ATHENA_TABLE,
-        "athena_output_location": ATHENA_OUTPUT_LOCATION,
-        "report_bucket_name": REPORT_BUCKET_NAME,
+        "catalog": athena_catalog,
+        "database": athena_database,
+        "table": athena_table,
+        "athena_output_location": athena_output_location,
+        "report_bucket_name": report_bucket_name,
     }
 
 # Athena クエリが完了するまで待機する
 def wait_for_athena_query(query_execution_id: str, poll_seconds: float = 1.0) -> None:
+    athena = get_athena_client()
+
     while True:
         # クエリ実行状況の取得
         response = athena.get_query_execution(QueryExecutionId=query_execution_id)
@@ -935,6 +971,7 @@ def run_athena_query_for_sensor_history(period: str) -> List[Dict[str, Any]]:
     """.strip()
 
     # クエリ実行
+    athena = get_athena_client()
     response = athena.start_query_execution(
         QueryString=query,
         QueryExecutionContext={
@@ -1105,6 +1142,11 @@ def build_chart_dataset(rows: List[Dict[str, Any]], period: str) -> Dict[str, An
 
 # matplotlib でクエリデータからグラフ画像を作成する
 def build_sensor_chart_image(chart_data: Dict[str, Any], period: str) -> bytes:
+    # 他ツールの core.py import 高速化のため matplotlib はここで import
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     series = chart_data["series"]
 
     x_labels = [p["time"] for p in series["co2_ppm"]]
@@ -1154,6 +1196,7 @@ def upload_report_image_to_s3(image_bytes: bytes, period: str) -> Dict[str, str]
     today_str = datetime.now(JST).strftime("%Y-%m-%d")
     filename = f"sensor_report_{period}_{uuid.uuid4().hex[:8]}.png"
     s3_key = f"reports/{today_str}/{filename}"
+    s3_client = get_s3_client()
     s3_client.put_object(
         Bucket=config_env["report_bucket_name"],
         Key=s3_key,
@@ -1178,10 +1221,12 @@ def upload_report_image_to_s3(image_bytes: bytes, period: str) -> Dict[str, str]
 
 # 指定期間のセンサーデータからグラフ画像とコメント用データを生成する
 def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
+    period = normalize_period(period)
+    
     try:
-        print(f"[Report] period: {period}")
+        print(f"[Report] period: {period}", file=sys.stderr, flush=True)
         rows = run_athena_query_for_sensor_history(period) # クエリ実行
-        print(f"[Report] athena rows: {len(rows)}")
+        print(f"[Report] athena rows: {len(rows)}", file=sys.stderr, flush=True)
 
         chart_data = build_chart_dataset(rows, period)     # データ整形
         if not chart_data["ok"]:
@@ -1190,7 +1235,7 @@ def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
         image_bytes = build_sensor_chart_image(chart_data, period)     # グラフ作成
 
         upload_result = upload_report_image_to_s3(image_bytes, period) # S3 アップロード
-        print(f"[Report] image_s3_key: {upload_result['image_s3_key']}")
+        print(f"[Report] image_s3_key: {upload_result['image_s3_key']}", file=sys.stderr, flush=True)
 
         period_map = {
             "1h": "1時間",
@@ -1213,7 +1258,7 @@ def generate_sensor_chart_report(period: str) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print("Sensor chart report error:", str(e))
+        print(f"[Report] report error: {e}", file=sys.stderr, flush=True)
         return {
             "ok": False,
             "message": "グラフレポートの生成に失敗しました。",
@@ -1249,7 +1294,7 @@ def reply_line_image_message(reply_token: str, image_url: str) -> None:
 
     with urllib.request.urlopen(req) as res:
         response = res.read().decode("utf-8")
-        print("LINE image reply response:", response)
+        print("LINE image reply response:", response, file=sys.stderr, flush=True)
 
 # LINE に テキスト + 画像 のメッセージを返信する
 def reply_line_text_and_image_message(
@@ -1290,4 +1335,4 @@ def reply_line_text_and_image_message(
 
     with urllib.request.urlopen(req) as res:
         response = res.read().decode("utf-8")
-        print("LINE text+image reply response:", response)
+        print("LINE text+image reply response:", response, file=sys.stderr, flush=True)
