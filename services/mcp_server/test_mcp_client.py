@@ -1,4 +1,5 @@
 """
+【テスト用スクリプト】
 ローカル環境で MCP Server の天気予報ツールをテストするスクリプト
 
 1. ローカル環境で MCP Server の起動
@@ -14,7 +15,7 @@ PYTHONPATH="$PWD/layer/python:$PWD" python -m services.mcp_server.test_mcp_clien
 
 3. 実行結果の確認
 以下のような出力が返ってくれば MCP Server 上でツール実行が成功している
-ツール一覧取得 → get_weather_context_tool を MCP 経由で実行 → 結果を MCP response として取得できていることを確認
+ツール一覧取得 → get_weather_context_tool を MCP 経由で実行 → 結果を MCP response として取得
 
 tools: ['get_weather_context_tool', 'get_calendar_context_tool', 'generate_sensor_chart_report_tool']
 "meta=None content="[

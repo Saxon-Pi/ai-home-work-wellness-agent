@@ -26,7 +26,12 @@ from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp import MCPClient
 
 mcp_tools_client = MCPClient(
-    lambda: streamablehttp_client("http://127.0.0.1:8000/mcp")
+    lambda: streamablehttp_client("http://127.0.0.1:8000/mcp"),
+    tool_filters={
+        "allowed": [
+            "get_weather_context_tool",
+        ]
+    },
 )
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
@@ -94,9 +99,9 @@ chat_agent = Agent(
     model=model,
     tools=[
         # tools.py
-        get_environment_summary_tool,
+        #get_environment_summary_tool,
         reply_line_message_tool,
-        reply_line_text_and_image_message_tool,
+        #reply_line_text_and_image_message_tool,
         # MCP tool
         mcp_tools_client,
     ],
