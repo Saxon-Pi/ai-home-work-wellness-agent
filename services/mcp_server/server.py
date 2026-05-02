@@ -1,3 +1,11 @@
+"""
+NOTE:
+server.py は FastMCP による正式な MCP Server 実装となる
+現在の Lambda 環境では handler.py を経由した擬似 MCP 構成を利用しているが、
+ (services/mcp_server/handler.py 内の tool routing で制御)
+将来的に HTTP MCP Server として公開する際には、こちらを使用する
+"""
+
 import sys
 from typing import Any, Dict
 

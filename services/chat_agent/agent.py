@@ -10,28 +10,12 @@ from tools import (
     reply_line_message_tool,
     # テキストと画像を LINE に同時返信するツール
     reply_line_text_and_image_message_tool,
+    # Open-Meteo から天気情報を取得するツール
     get_weather_context_tool,
+    # Google Calendar から今後の予定を取得するツール
     get_calendar_context_tool,
+    # 室内環境データのグラフレポートを作成するツール
     generate_sensor_chart_report_tool,
-)
-
-# from mcp.client.streamable_http import streamablehttp_client
-# from strands.tools.mcp import MCPClient
-
-# mcp_tools_client = MCPClient(
-#     lambda: streamablehttp_client("http://localhost:8000/mcp")
-# )
-
-from mcp.client.streamable_http import streamablehttp_client
-from strands.tools.mcp import MCPClient
-
-mcp_tools_client = MCPClient(
-    lambda: streamablehttp_client("http://127.0.0.1:8000/mcp"),
-    tool_filters={
-        "allowed": [
-            "get_weather_context_tool",
-        ]
-    },
 )
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
@@ -98,12 +82,14 @@ reply_line_message_tool を併用しないこと。
 chat_agent = Agent(
     model=model,
     tools=[
-        # tools.py
-        #get_environment_summary_tool,
+        # tools.py (lineChatHandlerFn 上で実行)
+        get_environment_summary_tool,
         reply_line_message_tool,
-        #reply_line_text_and_image_message_tool,
-        # MCP tool
-        mcp_tools_client,
+        reply_line_text_and_image_message_tool,
+        # server.py (mcpServerFn 上で実行)
+        get_weather_context_tool,
+        get_calendar_context_tool,
+        generate_sensor_chart_report_tool,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

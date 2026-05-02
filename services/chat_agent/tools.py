@@ -2,12 +2,43 @@
 Chat Agent が室内環境、カレンダー、天気情報の取得と、LINE 返信を行うために使用するツール群
 これらのツールは、LINE Webhook から起動される Chat Agent から利用されることを想定している
 
-Agent はこれらのツールを使い、以下の流れで動作する
+[Agent の動作フロー]
 - 現在の室内環境を確認
 - 今後の予定を確認
 - 現在の天気や気象リスクを確認
 - 上記に関する質問の回答を生成
 - 最終的な返答を LINE に送信
+
+[アーキテクチャ]
+一部ツールは Chat Agent Lambda ではなく、MCP Server Lambda (mcpServerFn) 上で実行される
+
+Lambda 分離の目的は以下
+- ツール実行ロジックの分離
+- 権限の最小化（Chat Agent 側に不要なAWS権限を持たせない）
+- 将来的な MCP Server（HTTP化）への移行を容易にする
+
+[対象ツール]
+以下のツールは MCP Server Lambda 経由で実行される
+- get_weather_context_tool
+- get_calendar_context_tool
+- generate_sensor_chart_report_tool
+
+[実行フロー]
+chat_agent (Lambda)
+  ↓ @tool 呼び出し
+get_weather_context_tool()
+  ↓
+invoke_mcp_tool()
+  ↓ Lambda Invoke
+mcpServerFn
+  ↓ handler.py
+tool_name に応じて処理を分岐
+  ↓
+core.py の各関数を実行
+
+[備考]
+- 現在は Lambda Invoke による「擬似MCP構成」となる
+- server.py に FastMCP による正式 MCP 実装があり、将来的に HTTP MCP Server に移行可能
 """
 
 import sys
@@ -16,8 +47,6 @@ import json
 from typing import Any, Dict
 import boto3
 from strands import tool
-
-lambda_client = boto3.client("lambda")
 
 # 既存の Lambda 関数から関数をインポート
 # Lambda Layer から core.py を読み込む
@@ -30,15 +59,55 @@ from common.core import (
     reply_line_message,
     # テキストと画像を送信する関数
     reply_line_text_and_image_message,
-    # # Google Calendar 連携用関数
-    # get_calendar_context,
-    # # 天気予報連携用関数
-    # get_weather_context,
-    # # グラフレポート作成用関数
-    # generate_sensor_chart_report,
-    # # 画像のみを送信する関数
-    # reply_line_image_message,
 )
+
+# Lambda client 不要時に初期化をしない
+_lambda_client = None
+
+def get_lambda_client():
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda")
+    return _lambda_client
+
+# MCP ツール実行用 Lambda invoke ラッパー
+def invoke_mcp_tool(tool_name: str, arguments: dict) -> dict:
+    response = get_lambda_client().invoke(
+        FunctionName=os.environ["MCP_SERVER_FUNCTION_NAME"],
+        InvocationType="RequestResponse",
+        Payload=json.dumps({
+            "body": json.dumps({
+                "tool_name": tool_name,
+                "arguments": arguments,
+            })
+        }).encode("utf-8"),
+    )
+
+    raw_payload = response["Payload"].read().decode("utf-8")
+
+    # Lambda実行エラー（例外発生時）
+    if "FunctionError" in response:
+        print(f"[MCP Invoke] function error: {raw_payload}", file=sys.stderr, flush=True)
+        return {
+            "ok": False,
+            "message": "MCP Server Lambda の実行に失敗しました。",
+        }
+
+    # 通常レスポンス
+    payload = json.loads(raw_payload)
+    body = json.loads(payload.get("body", "{}"))
+
+    if not body.get("ok"):
+        return {
+            "ok": False,
+            "message": body.get("error", "MCP Server tool failed"),
+        }
+
+    return body["result"]
+
+# =====================================================
+#  Tools
+# =====================================================
 
 # 直近1時間の室内環境データを取得し、要約した結果を返すツール
 @tool
@@ -61,30 +130,6 @@ def get_environment_summary_tool() -> Dict[str, Any]:
         device_id=DEVICE_ID,
         lookback_minutes=LOOKBACK_MINUTES,
     )
-
-# MCP ツール実行用 Lambda invoke ラッパー
-def invoke_mcp_tool(tool_name: str, arguments: dict) -> dict:
-    response = lambda_client.invoke(
-        FunctionName=os.environ["MCP_SERVER_FUNCTION_NAME"],
-        InvocationType="RequestResponse",
-        Payload=json.dumps({
-            "body": json.dumps({
-                "tool_name": tool_name, # ツール名
-                "arguments": arguments, # ツール引数
-            })
-        }).encode("utf-8"),
-    )
-
-    payload = json.loads(response["Payload"].read().decode("utf-8"))
-    body = json.loads(payload.get("body", "{}"))
-
-    if not body.get("ok"):
-        return {
-            "ok": False,
-            "message": body.get("error", "MCP Server tool failed"),
-        }
-
-    return body["result"]
 
 @tool
 def get_weather_context_tool(target_datetime: str) -> dict:
@@ -121,7 +166,7 @@ def reply_line_message_tool(reply_token: str, message: str) -> str:
     - reply_token: LINE の replyToken
     - message: 返信するメッセージ本文
     """
-    print("reply_message:", message)
+    print(f"reply_message: {message}", file=sys.stderr, flush=True)
     reply_line_message(reply_token, message)
     return "LINE にメッセージを返信しました。"
 
@@ -137,13 +182,13 @@ def reply_line_text_and_image_message_tool(reply_token: str, message: str, image
     - message: 室内環境データの傾向や推奨アクションを含むレポート本文
     - image_url: 返信するグラフ画像のURL
     """
-    print("reply_message:", message)
+    print(f"reply_message: {message}", file=sys.stderr, flush=True)
     safe_image_url = image_url.split("?")[0]
     print(f"reply_image_url: {safe_image_url}", file=sys.stderr, flush=True)
     reply_line_text_and_image_message(reply_token, message, image_url)
     return "LINEにテキストと画像を返信しました。"
 
-""" MCP化を行ったツールはコメントアウトしている """
+""" MCP化前のツールはコメントアウトしている """
 # # Google Calendar から今後の予定を取得するツール
 # @tool
 # def get_calendar_context_tool() -> Dict[str, Any]:
