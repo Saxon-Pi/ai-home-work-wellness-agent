@@ -15,6 +15,20 @@ from tools import (
     generate_sensor_chart_report_tool,
 )
 
+# from mcp.client.streamable_http import streamablehttp_client
+# from strands.tools.mcp import MCPClient
+
+# mcp_tools_client = MCPClient(
+#     lambda: streamablehttp_client("http://localhost:8000/mcp")
+# )
+
+from mcp.client.streamable_http import streamablehttp_client
+from strands.tools.mcp import MCPClient
+
+mcp_tools_client = MCPClient(
+    lambda: streamablehttp_client("http://127.0.0.1:8000/mcp")
+)
+
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
 BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
@@ -79,12 +93,12 @@ reply_line_message_tool を併用しないこと。
 chat_agent = Agent(
     model=model,
     tools=[
+        # tools.py
         get_environment_summary_tool,
-        get_weather_context_tool,
-        get_calendar_context_tool,
-        generate_sensor_chart_report_tool,
         reply_line_message_tool,
         reply_line_text_and_image_message_tool,
+        # MCP tool
+        mcp_tools_client,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

@@ -363,7 +363,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     //   })
     // );
 
-    // MCP Server: weather / calendar / report のツール実行側
+    // MCP Server: weather / calendar / report のツール実行主体
     const mcpServerFn = new lambda.Function(this, "McpServerLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",

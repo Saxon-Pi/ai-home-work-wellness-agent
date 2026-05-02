@@ -65,5 +65,26 @@ def generate_sensor_chart_report_tool(period: str) -> Dict[str, Any]:
     """
     return generate_sensor_chart_report(period=period)
 
+# MCP Server を HTTP サーバーとして起動する
+"""
+chat_agent (wellness_agent)
+  ↓
+mcp_tools_client
+(Agent は mcp_tools_client を「ツール群」として扱う)
+  ↓ HTTP
+MCP Server /mcp
+  ↓
+@mcp.tool の get_weather_context_tool
+(server.py の @mcp.tool がツール定義になる)
+  ↓
+core.py
+"""
+# if __name__ == "__main__":
+#     mcp.run(
+#         transport="streamable-http",
+#         host="0.0.0.0", # このマシンの全ネットワークIF で待ち受け
+#         port=8000,
+#         path="/mcp",
+#     )
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="streamable-http")
