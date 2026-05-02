@@ -1,19 +1,13 @@
-# まずは簡易Lambda分離
-# → @mcp.tool は使わず、handler.py で tool_name を受け取って core.py を呼ぶ
-
-# TODO: 
-# @mcp.tool を使って、Streamable HTTP / SSE などで MCP Server を公開し、
-# chat_agent から HTTP MCPClient で接続する
+"""
+Lambda 上で擬似 MCP Server として動作するエントリポイント
+tool_name と arguments を受け取り、tool_registry に定義されたツール関数を実行する
+"""
 
 import json
 from typing import Any, Dict
+from tool_registry import TOOLS
 
-from common.core import (
-    get_weather_context,
-    get_calendar_context,
-    generate_sensor_chart_report,
-)
-
+# レスポンス構造の統一
 def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
@@ -28,24 +22,17 @@ def handler(event, context):
         tool_name = body.get("tool_name")
         arguments = body.get("arguments", {})
 
-        if tool_name == "get_weather_context_tool":
-            result = get_weather_context(
-                target_datetime=arguments.get("target_datetime")
-            )
-
-        elif tool_name == "get_calendar_context_tool":
-            result = get_calendar_context()
-
-        elif tool_name == "generate_sensor_chart_report_tool":
-            result = generate_sensor_chart_report(
-                period=arguments.get("period", "1d")
-            )
-
-        else:
+        # 辞書からツールの関数を検索
+        tool_def = TOOLS.get(tool_name)
+        # 存在しない tool_name が来たらエラー
+        if not tool_def:
             return response(400, {
                 "ok": False,
                 "error": f"Unknown tool: {tool_name}",
             })
+        
+        # ツール実行結果
+        result = tool_def["handler"](arguments)
 
         return response(200, {
             "ok": True,
