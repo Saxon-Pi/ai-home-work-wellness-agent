@@ -82,11 +82,11 @@ reply_line_message_tool を併用しないこと。
 chat_agent = Agent(
     model=model,
     tools=[
-        # tools.py (lineChatHandlerFn 上で実行)
+        # lineChatHandlerFn 上で実行するツール
         get_environment_summary_tool,
         reply_line_message_tool,
         reply_line_text_and_image_message_tool,
-        # server.py (mcpServerFn 上で実行)
+        # mcpServerFn 上で実行するツール
         get_weather_context_tool,
         get_calendar_context_tool,
         generate_sensor_chart_report_tool,
