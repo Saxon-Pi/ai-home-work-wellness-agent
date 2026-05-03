@@ -315,7 +315,6 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         AGENT_STATE_TABLE_NAME: agentStateTable.tableName,
         DEVICE_ID: "raspi-home-1",
         LOOKBACK_MINUTES: "60",
-        LINE_SECRET_NAME: lineBotSecret.secretName,
         GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
         WEATHER_LATITUDE: "35.703085",   // 緯度 (吉祥寺駅)
         WEATHER_LONGITUDE: "139.579775", // 経度 (吉祥寺駅)
@@ -330,7 +329,6 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
 
     metricsTable.grantReadData(mcpServerFn);
     agentStateTable.grantReadWriteData(mcpServerFn);
-    lineBotSecret.grantRead(mcpServerFn);
     googleCalendarSecret.grantRead(mcpServerFn);
     reportArtifactsBucket.grantReadWrite(mcpServerFn);
 
@@ -494,7 +492,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, "WellnessAgentSchedule", {
-      value: "rate(30 minutes)",
+      value: "JST 9:00-23:00 every 10 minutes",
     });
 
     new cdk.CfnOutput(this, "LineWebhookUrl", {

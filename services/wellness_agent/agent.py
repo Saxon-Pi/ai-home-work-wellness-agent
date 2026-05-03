@@ -78,11 +78,13 @@ SYSTEM_PROMPT = """
 wellness_agent = Agent(
     model=model,
     tools=[
+        # wellnessAgentFn 上で実行するツール
         get_environment_summary_tool,
-        get_calendar_context_tool,
-        get_weather_context_tool,
         format_line_message_tool,
         send_line_message_tool,
+        # mcpServerFn 上で実行するツール
+        get_calendar_context_tool,
+        get_weather_context_tool,
     ],
     system_prompt=SYSTEM_PROMPT,
 )
