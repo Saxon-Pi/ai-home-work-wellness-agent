@@ -61,6 +61,11 @@ SYSTEM_PROMPT = """
 - 不安を煽りすぎず、自然な内容とすること
 - 必要に応じて換気、水分補給、休憩、室温調整などを提案すること
 
+[予定と天気を組み合わせる場合]
+- ユーザがスケジュールのイベントに関連した天気を質問した場合は、先に get_calendar_context_tool を使って予定時刻を確認すること
+- 予定時刻が取得できた場合は、その予定開始時刻に近い日時を target_datetime として get_weather_context_tool を使うこと
+- 例: 「明日の試験に傘は必要？」→ カレンダー確認 → 明日の試験開始時刻を取得 → その時刻の天気を確認 → 傘の要否を回答
+
 [天気に関する補足]
 - 通知時点の外気状況を見る場合は、現在時刻に近い日時を get_weather_context_tool に指定する
 - 朝、昼、夕方、夜などの時間帯について考慮が必要な場合は、以下を目安に解釈してよい
@@ -73,11 +78,13 @@ SYSTEM_PROMPT = """
 wellness_agent = Agent(
     model=model,
     tools=[
+        # wellnessAgentFn 上で実行するツール
         get_environment_summary_tool,
-        get_calendar_context_tool,
-        get_weather_context_tool,
         format_line_message_tool,
         send_line_message_tool,
+        # mcpServerFn 上で実行するツール
+        get_calendar_context_tool,
+        get_weather_context_tool,
     ],
     system_prompt=SYSTEM_PROMPT,
 )
