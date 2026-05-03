@@ -216,12 +216,13 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
       "arn:aws:lambda:ap-northeast-1:856699698935:layer:strands-agents-py3_12-x86_64:1"
     );
 
-    // Wellness Agent (Strands Agent)
+    // Wellness Agent (Strands Agent): Agent定期実行 / ツール呼び出し判断 / LINE通知
     const wellnessAgentFn = new lambda.Function(this, "WellnessAgentLambda", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset("services/wellness_agent"),
-      timeout: cdk.Duration.seconds(60),
+      timeout: cdk.Duration.seconds(90),
+      memorySize: 512,
       layers: [strandsLayer, commonLayer],
       environment: {
         METRICS_TABLE_NAME: metricsTable.tableName,
@@ -231,16 +232,12 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
-        GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
-        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
-        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
       },
     });
 
     metricsTable.grantReadData(wellnessAgentFn);
     agentStateTable.grantReadWriteData(wellnessAgentFn);
     lineBotSecret.grantRead(wellnessAgentFn);
-    googleCalendarSecret.grantRead(wellnessAgentFn);
 
     wellnessAgentFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -320,8 +317,8 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         LOOKBACK_MINUTES: "60",
         LINE_SECRET_NAME: lineBotSecret.secretName,
         GOOGLE_CALENDAR_SECRET_NAME: googleCalendarSecret.secretName,
-        WEATHER_LATITUDE: "35.681236",   // 緯度 (東京駅)
-        WEATHER_LONGITUDE: "139.767125", // 経度 (東京駅)
+        WEATHER_LATITUDE: "35.703085",   // 緯度 (吉祥寺駅)
+        WEATHER_LONGITUDE: "139.579775", // 経度 (吉祥寺駅)
         ATHENA_CATALOG: "dynamodb_datasource",
         ATHENA_DATABASE: "default",
         ATHENA_TABLE: "room_metrics",
@@ -388,6 +385,14 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     mcpServerFn.grantInvoke(lineChatHandlerFn);
     
     lineChatHandlerFn.addEnvironment(
+      "MCP_SERVER_FUNCTION_NAME",
+      mcpServerFn.functionName
+    );
+
+    // wellnessAgentFn が mcpServerFn を呼び出す
+    mcpServerFn.grantInvoke(wellnessAgentFn);
+    
+    wellnessAgentFn.addEnvironment(
       "MCP_SERVER_FUNCTION_NAME",
       mcpServerFn.functionName
     );
