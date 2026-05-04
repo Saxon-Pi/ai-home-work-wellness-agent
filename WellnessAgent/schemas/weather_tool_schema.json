@@ -1,0 +1,16 @@
+[
+  {
+    "name": "get_weather_context_tool",
+    "description": "指定日時の天気情報と健康アラート情報を取得する。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target_datetime": {
+          "type": "string",
+          "description": "ISO 8601形式の日時文字列"
+        }
+      },
+      "required": ["target_datetime"]
+    }
+  }
+]

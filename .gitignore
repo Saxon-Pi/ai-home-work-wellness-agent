@@ -10,3 +10,39 @@ cdk.out
 work
 .DS_Store
 **/.DS_Store
+
+# =========================
+# AgentCore
+# =========================
+
+agentcore/.cache/
+agentcore/.cli/
+agentcore/.env.local
+
+# CDK build artifacts
+agentcore/cdk/cdk.out/
+agentcore/cdk/dist/
+agentcore/cdk/node_modules/
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# AgentCore generated/local files
+WellnessAgent/agentcore/.cache/
+WellnessAgent/agentcore/.cli/
+WellnessAgent/agentcore/.env.local
+WellnessAgent/agentcore/cdk/cdk.out/
+WellnessAgent/agentcore/cdk/dist/
+WellnessAgent/agentcore/cdk/node_modules/
+WellnessAgent/agentcore/.llm-context/
+
+# account anonymization
+WellnessAgent/agentcore/aws-targets.json
+WellnessAgent/agentcore/agentcore.json
