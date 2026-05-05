@@ -1,13 +1,3 @@
-"""
-Strands Agent の定義
-
-Agent は get_environment_summary_tool() を呼び出し、回答に必要な情報を主体的に取得する
-その後、取得結果を踏まえて以下を実行する
-- アドバイス生成
-- LINE メッセージの整形 (tool使用)
-- メッセージの送信 (tool使用)
-"""
-
 import os
 from strands import Agent
 from strands.models import BedrockModel
@@ -16,14 +6,19 @@ from strands.models import BedrockModel
 from tools import (
     # 直近1時間の室内環境データのサマリーを作成するツール (最新値、平均値、最大値、CO2トレンド、環境ステータス)
     get_environment_summary_tool,
-    # Google Calendar から今後の予定を取得するツール
-    get_calendar_context_tool,
-    # Open-Meteo から天気情報を取得するツール
-    get_weather_context_tool,
     # 室内環境サマリと Agent が生成したアドバイスを組み合わせて、LINE メッセージを作成するツール
     format_line_message_tool,
     # 指定されたメッセージを LINE に送信するツール
     send_line_message_tool,
+)
+
+from mcp.client.streamable_http import streamablehttp_client
+from strands.tools.mcp import MCPClient
+
+# AgentCore との通信プロトコルに MCP を使用
+# * AgentCore Gateway が MCP Server として振る舞うため、mcp_server/server.py は使用しない
+agentcore_gateway_client = MCPClient(
+    lambda: streamablehttp_client(os.environ["AGENTCORE_GATEWAY_URL"]),
 )
 
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
@@ -82,9 +77,8 @@ wellness_agent = Agent(
         get_environment_summary_tool,
         format_line_message_tool,
         send_line_message_tool,
-        # mcpServerFn 上で実行するツール
-        get_calendar_context_tool,
-        get_weather_context_tool,
+        # AgentCore Gateway 経由で MCP Server (mcpServerFn) 上で実行するツール群
+        agentcore_gateway_client,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

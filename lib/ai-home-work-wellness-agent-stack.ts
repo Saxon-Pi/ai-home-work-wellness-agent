@@ -232,6 +232,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
+        AGENTCORE_GATEWAY_URL: "REPLACE_ME_AGENTCORE_GATEWAY_URL",
       },
     });
 
