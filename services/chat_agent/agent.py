@@ -10,12 +10,6 @@ from tools import (
     reply_line_message_tool,
     # テキストと画像を LINE に同時返信するツール
     reply_line_text_and_image_message_tool,
-    # # Open-Meteo から天気情報を取得するツール
-    # get_weather_context_tool,
-    # # Google Calendar から今後の予定を取得するツール
-    # get_calendar_context_tool,
-    # # 室内環境データのグラフレポートを作成するツール
-    # generate_sensor_chart_report_tool,
 )
 
 from mcp.client.streamable_http import streamablehttp_client
@@ -95,11 +89,7 @@ chat_agent = Agent(
         get_environment_summary_tool,
         reply_line_message_tool,
         reply_line_text_and_image_message_tool,
-        # mcpServerFn 上で実行するツール
-        #get_weather_context_tool,
-        #get_calendar_context_tool,
-        #generate_sensor_chart_report_tool,
-        # AgentCore Gateway 経由の MCP ツール
+        # AgentCore Gateway 経由で MCP Server (mcpServerFn) 上で実行するツール群
         agentcore_gateway_client,
     ],
     system_prompt=SYSTEM_PROMPT,
