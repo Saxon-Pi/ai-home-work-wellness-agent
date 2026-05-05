@@ -18,6 +18,15 @@ from tools import (
     generate_sensor_chart_report_tool,
 )
 
+from mcp.client.streamable_http import streamablehttp_client
+from strands.tools.mcp import MCPClient
+
+# AgentCore との通信プロトコルに MCP を使用
+# * AgentCore Gateway が MCP Server として振る舞うため、mcp_server/server.py は使用しない
+agentcore_gateway_client = MCPClient(
+    lambda: streamablehttp_client(os.environ["AGENTCORE_GATEWAY_URL"]),
+)
+
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-northeast-1")
 BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
@@ -87,9 +96,11 @@ chat_agent = Agent(
         reply_line_message_tool,
         reply_line_text_and_image_message_tool,
         # mcpServerFn 上で実行するツール
-        get_weather_context_tool,
+        #get_weather_context_tool,
         get_calendar_context_tool,
         generate_sensor_chart_report_tool,
+        # AgentCore Gateway 経由の MCP ツール
+        agentcore_gateway_client,
     ],
     system_prompt=SYSTEM_PROMPT,
 )

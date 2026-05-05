@@ -42,12 +42,15 @@ core.py の各関数を実行
 - server.py に FastMCP による正式 MCP 実装があり、将来的に HTTP MCP Server に移行可能
 """
 
+import urllib.request
 import sys
 import os
 import json
 from typing import Any, Dict
 import boto3
 from strands import tool
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 
 # 既存の Lambda 関数から関数をインポート
 # Lambda Layer から core.py を読み込む
@@ -106,6 +109,35 @@ def invoke_mcp_tool(tool_name: str, arguments: dict) -> dict:
 
     return body["result"]
 
+# AgentCore Gateway の URL にリクエストを投げて MCP ツールを実行する
+def invoke_gateway_tool(tool_name: str, arguments: dict):
+    url = os.environ["AGENTCORE_GATEWAY_URL"]
+    
+    payload = {
+        "tool_name": tool_name,
+        "arguments": arguments
+    }
+
+    session = boto3.Session()
+    credentials = session.get_credentials()
+
+    request = AWSRequest(
+        method="POST",
+        url=url,
+        data=json.dumps(payload),
+        headers={"Content-Type": "application/json"},
+    )
+
+    SigV4Auth(credentials, "execute-api", session.region_name).add_auth(request)
+
+    response = urllib.request.post(
+        url,
+        headers=dict(request.headers),
+        data=request.body
+    )
+
+    return response.json()
+
 # =====================================================
 #  Tools
 # =====================================================
@@ -132,34 +164,63 @@ def get_environment_summary_tool() -> Dict[str, Any]:
         lookback_minutes=LOOKBACK_MINUTES,
     )
 
-@tool
-def get_weather_context_tool(target_datetime: str) -> dict:
-    """
-    指定日時の天気情報と季節に関する健康アラート情報を取得するツールです。
-    夕方、夜、明日の朝など、特定の時間帯の天気や過ごし方についてアドバイスする際に使用してください。
+# @tool
+# def get_weather_context_tool(target_datetime: str) -> dict:
+    # """
+    # 指定日時の天気情報と季節に関する健康アラート情報を取得するツールです。
+    # 夕方、夜、明日の朝など、特定の時間帯の天気や過ごし方についてアドバイスする際に使用してください。
 
-    引数:
-    - target_datetime: ISO 8601 形式の日時文字列
-      例: 2026-04-20T18:00:00+09:00
+    # 引数:
+    # - target_datetime: ISO 8601 形式の日時文字列
+    #   例: 2026-04-20T18:00:00+09:00
 
-    以下の情報を返します:
-    - weather:
-        - condition: 指定日時に近い時間の天気
-        - temperature_c: 指定日時に近い時間の外気温
-        - humidity: 指定日時に近い時間の外気湿度
-        - temp_max_c: その日の最高気温
-        - temp_min_c: その日の最低気温
-    - season_context:
-        - season: summer / winter / other
-        - month: 対象日時の月
-    - health_alerts:
-        - heat_risk: 熱中症対策が必要か
-        - dryness_risk: 乾燥対策が必要か
-    """
-    return invoke_mcp_tool(
-        "get_weather_context_tool",
-        {"target_datetime": target_datetime},
-    )
+    # 以下の情報を返します:
+    # - weather:
+    #     - condition: 指定日時に近い時間の天気
+    #     - temperature_c: 指定日時に近い時間の外気温
+    #     - humidity: 指定日時に近い時間の外気湿度
+    #     - temp_max_c: その日の最高気温
+    #     - temp_min_c: その日の最低気温
+    # - season_context:
+    #     - season: summer / winter / other
+    #     - month: 対象日時の月
+    # - health_alerts:
+    #     - heat_risk: 熱中症対策が必要か
+    #     - dryness_risk: 乾燥対策が必要か
+    # """
+#     return invoke_mcp_tool(
+#         "get_weather_context_tool",
+#         {"target_datetime": target_datetime},
+#     )
+
+# @tool
+# def get_weather_context_tool(target_datetime: str):
+#     """
+#     指定日時の天気情報と季節に関する健康アラート情報を取得するツールです。
+#     夕方、夜、明日の朝など、特定の時間帯の天気や過ごし方についてアドバイスする際に使用してください。
+
+#     引数:
+#     - target_datetime: ISO 8601 形式の日時文字列
+#       例: 2026-04-20T18:00:00+09:00
+
+#     以下の情報を返します:
+#     - weather:
+#         - condition: 指定日時に近い時間の天気
+#         - temperature_c: 指定日時に近い時間の外気温
+#         - humidity: 指定日時に近い時間の外気湿度
+#         - temp_max_c: その日の最高気温
+#         - temp_min_c: その日の最低気温
+#     - season_context:
+#         - season: summer / winter / other
+#         - month: 対象日時の月
+#     - health_alerts:
+#         - heat_risk: 熱中症対策が必要か
+#         - dryness_risk: 乾燥対策が必要か
+#     """
+#     return invoke_gateway_tool(
+#         "get_weather_context_tool",
+#         {"target_datetime": target_datetime},
+#     )
 
 @tool
 def get_calendar_context_tool() -> dict:
