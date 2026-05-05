@@ -1,0 +1,40 @@
+[
+  {
+    "name": "get_weather_context_tool",
+    "description": "指定日時の天気情報、外気温、湿度、最高・最低気温、季節に応じた健康アラートを取得する。朝・昼・夕方・夜、明日など特定時間帯の天気確認や、傘・服装・換気・体調管理の判断に使用する。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target_datetime": {
+          "type": "string",
+          "description": "確認したい日時。ISO 8601形式で指定する。例: 2026-05-05T18:00:00+09:00"
+        }
+      },
+      "required": ["target_datetime"]
+    }
+  },
+  {
+    "name": "get_calendar_context_tool",
+    "description": "Google Calendarから今後の予定を取得する。会議、外出、休憩タイミング、作業計画など、スケジュールを踏まえた回答や提案を行う場合に使用する。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "generate_sensor_chart_report_tool",
+    "description": "指定期間の室内環境データから、CO2・温度・湿度の推移グラフ画像と要約統計を生成する。ユーザが室内環境の推移、グラフ、レポート、1時間/1日/1週間の状況確認を求めた場合に使用する。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "period": {
+          "type": "string",
+          "description": "取得期間。1時間なら '1h'、1日/今日なら '1d'、1週間なら '7d' を指定する。",
+          "enum": ["1h", "1d", "7d"]
+        }
+      },
+      "required": ["period"]
+    }
+  }
+]

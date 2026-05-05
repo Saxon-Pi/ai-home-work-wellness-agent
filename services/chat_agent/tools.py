@@ -222,39 +222,39 @@ def get_environment_summary_tool() -> Dict[str, Any]:
 #         {"target_datetime": target_datetime},
 #     )
 
-@tool
-def get_calendar_context_tool() -> dict:
-    """
-    Google Calendar から今後の予定を取得するツールです。
-    会議前の行動提案や、スケジュールに応じたアドバイスをする際に使用してください。
+# @tool
+# def get_calendar_context_tool() -> dict:
+#     """
+#     Google Calendar から今後の予定を取得するツールです。
+#     会議前の行動提案や、スケジュールに応じたアドバイスをする際に使用してください。
 
-    以下の情報を返します:
-    - has_event_within_1h: 直近1時間以内に予定があるか
-    - upcoming_events: 今後の予定（開始時刻が近い順で最大3件）
-    """
-    return invoke_mcp_tool(
-        "get_calendar_context_tool",
-        {},
-    )
+#     以下の情報を返します:
+#     - has_event_within_1h: 直近1時間以内に予定があるか
+#     - upcoming_events: 今後の予定（開始時刻が近い順で最大3件）
+#     """
+#     return invoke_mcp_tool(
+#         "get_calendar_context_tool",
+#         {},
+#     )
 
-@tool
-def generate_sensor_chart_report_tool(period: str) -> dict:
-    """
-    指定期間の室内環境データからグラフレポートを生成するツールです。
-    ユーザが室内環境の推移やグラフ表示を求めた場合に使用してください。
+# @tool
+# def generate_sensor_chart_report_tool(period: str) -> dict:
+#     """
+#     指定期間の室内環境データからグラフレポートを生成するツールです。
+#     ユーザが室内環境の推移やグラフ表示を求めた場合に使用してください。
 
-    引数:
-    - period: 取得期間 (使用できる値は "1h", "1d", "7d")
+#     引数:
+#     - period: 取得期間 (使用できる値は "1h", "1d", "7d")
 
-    以下の情報を返します:
-    - image_url: 生成したグラフ画像の URL
-    - summary: グラフ生成結果のサマリ
-    - chart_data.summary_stats: CO2/温度/湿度 の 最小/最大/平均/傾向
-    """
-    return invoke_mcp_tool(
-        "generate_sensor_chart_report_tool",
-        {"period": period},
-    )
+#     以下の情報を返します:
+#     - image_url: 生成したグラフ画像の URL
+#     - summary: グラフ生成結果のサマリ
+#     - chart_data.summary_stats: CO2/温度/湿度 の 最小/最大/平均/傾向
+#     """
+#     return invoke_mcp_tool(
+#         "generate_sensor_chart_report_tool",
+#         {"period": period},
+#     )
 
 # LINE に返信するツール (replyToken)
 @tool
