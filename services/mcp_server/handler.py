@@ -7,6 +7,28 @@ import json
 from typing import Any, Dict
 from tool_registry import TOOLS
 
+# handler を Gateway 入力にも対応させる
+def parse_request(event, context):
+    # Lambda Invoke wrapper 経由 (既存)
+    if "body" in event:
+        body = json.loads(event.get("body") or "{}")
+        return body.get("tool_name"), body.get("arguments", {})
+
+    # AgentCore Gateway 経由
+    tool_name = None
+    try:
+        original_tool_name = context.client_context.custom.get(
+            "bedrockAgentCoreToolName"
+        )
+        if original_tool_name and "___" in original_tool_name:
+            tool_name = original_tool_name.split("___", 1)[1]
+        else:
+            tool_name = original_tool_name
+    except Exception:
+        pass
+
+    return tool_name, event
+
 # レスポンス構造の統一
 def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -17,10 +39,9 @@ def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 def handler(event, context):
     try:
-        body = json.loads(event.get("body") or "{}")
-
-        tool_name = body.get("tool_name")
-        arguments = body.get("arguments", {})
+        print(f"[AgentCore Gateway Event] {json.dumps(event, ensure_ascii=False)}", flush=True)
+        
+        tool_name, arguments = parse_request(event, context)
 
         # 辞書からツールの関数を検索
         tool_def = TOOLS.get(tool_name)

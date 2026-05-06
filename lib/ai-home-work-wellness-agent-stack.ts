@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -12,6 +14,20 @@ import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 
 //import * as timestream from "aws-cdk-lib/aws-timestream";
+
+// config/local.json からパラメータを取得
+function readLocalConfig() {
+  const configPath = path.join(__dirname, "..", "config", "local.json");
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+  return JSON.parse(fs.readFileSync(configPath, "utf-8"));
+}
+
+const localConfig = readLocalConfig();
+const agentcoreGatewayUrl =
+  localConfig.agentcoreGatewayUrl ?? "REPLACE_ME_AGENTCORE_GATEWAY_URL";
+
 
 export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -175,6 +191,16 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
     // );
 
     // =====================================================
+    // AgentCore
+    // =====================================================
+    /*
+    今回は既存のCDK構成を残して、一部ツールを AgentCore Gateway に移行することが目的のため、
+    AgentCore CLI ベースで Gateway 作成を実施した
+    実施手順は以下ドキュメントを参照すること
+    - 06_AgentCore化構想メモ.md (# ツールの AgentCore Gateway化 手順)
+    */
+
+    // =====================================================
     // Lambda
     // =====================================================
 
@@ -232,6 +258,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
+        AGENTCORE_GATEWAY_URL: agentcoreGatewayUrl,
       },
     });
 
@@ -275,6 +302,7 @@ export class AiHomeWorkWellnessAgentStack extends cdk.Stack {
         BEDROCK_REGION: this.region,
         BEDROCK_MODEL_ID: "global.anthropic.claude-sonnet-4-20250514-v1:0",
         LINE_SECRET_NAME: lineBotSecret.secretName,
+        AGENTCORE_GATEWAY_URL: agentcoreGatewayUrl,
       },
     });
 
