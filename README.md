@@ -194,13 +194,13 @@ AWS マネージドな構成で動作する
 
 | ドキュメント | 内容 |
 |---|---|
-| 00_システム構想メモ.md | 全体構想 |
-| 01_SCD40接続・MQTT送信手順書.md | センサ構築 |
-| 02_IoTCore-ラズパイ接続手順書.md | IoT Core 接続 |
-| 03_Grafanaデータ可視化手順書.md | Grafana |
-| 04_StrandsAgent化構想メモ.md | Agent 化 |
-| 05_ツールMCP化構想メモ.md | MCP 化 |
-| 06_AgentCore化構想メモ.md | AgentCore Gateway 化 |
+| [00_システム構想メモ.md](./docs/00_システム構想メモ.md) | 全体構想 |
+| [01_SCD40接続・MQTT送信手順書.md](./docs/01_SCD40接続・MQTT送信手順書.md) | センサ構築 |
+| [02_IoTCore-ラズパイ接続手順書.md](./docs/02_IoTCore-ラズパイ接続手順書.md) | IoT Core 接続 |
+| [03_Grafanaデータ可視化手順書.md](./docs/03_Grafanaデータ可視化手順書.md) | Grafana |
+| [04_StrandsAgent化構想メモ.md](./docs/04_StrandsAgent化構想メモ.md) | Agent 化 |
+| [05_ツールMCP化構想メモ.md](./docs/05_ツールMCP化構想メモ.md) | MCP 化 |
+| [06_AgentCore化構想メモ.md](./docs/06_AgentCore化構想メモ.md) | AgentCore Gateway 化 |
 
 ---
 
