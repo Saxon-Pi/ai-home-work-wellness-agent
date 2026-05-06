@@ -5,69 +5,126 @@ LINE 上で健康アドバイスを行う AI Wellness Agent
 
 ---
 
-## デモンストレーション
-
-### LINE 上での AI アシスタント
-
-📝TODO:
-- LINE 会話スクリーンショットを貼る
-- 「明日の朝の天気と予定を教えて」
-- 「1日の CO2 濃度の推移は？」
-などの会話例を掲載
+- [AI Home Work Wellness Agent](#ai-home-work-wellness-agent)
+- [デモンストレーション](#デモンストレーション)
+- [システム概要](#システム概要)
+- [主な機能](#主な機能)
+- [システムアーキテクチャ](#システムアーキテクチャ)
+- [AI Agent アーキテクチャ](#ai-agent-アーキテクチャ)
+- [技術的な工夫ポイント](#技術的な工夫ポイント)
+- [使用技術](#使用技術)
+- [セットアップ手順](#セットアップ手順)
+- [今後の改善](#今後の改善)
+- [License](#license)
 
 ---
 
-### 室内環境レポート生成
+# デモンストレーション
 
-📝TODO:
-- CO2 / 温度 / 湿度グラフ画像を貼る
-- AI による分析コメント付きの返信画面を掲載
+## 健康アドバイス定期通知機能
+
+室内の **CO2濃度、温度、湿度** に応じて、室内環境を評価し、  
+天気やスケジュールに基づいた健康アドバイスを定期通知してくれる機能  
+
+**室内環境： 良好** なときの通知例:  
+![定期通知-良好](./docs/img/readme/0.PNG)
+
+**室内環境： 注意** なときの通知例:  
+![定期通知-注意](./docs/img/readme/1.PNG)
+
+**室内環境： 要対応** なときの通知例:  
+![定期通知-要対応](./docs/img/readme/2.PNG)
+- 定期実行（良好 / 注意 / 用対応）
+
+---
+
+## LINE での対話型 AI アシスタント機能
+
+室内環境や天気、スケジュールに関する質問を LINE 上でやりとりできる機能  
+
+**「明日の昼の天気と予定を教えて」** に対する回答例:  
+![LINEチャット応答1](./docs/img/readme/3.PNG)
+
+**「明日はどんな1日になりそう？」** に対する回答例:  
+![LINEチャット応答2](./docs/img/readme/4.PNG)
+
+---
+
+## 室内環境レポート生成機能
+
+指定した期間の室内環境のレポートを作成・報告してくれる機能  
+
+**1日の室内環境レポート** の例:  
+![レポート内容](./docs/img/readme/5.PNG)
+
+グラフは以下のように画像形式で作成される  
+![室内環境グラフ](./docs/img/readme/6.PNG)
 
 ---
 
 ### Agent の推論ログ
 
-本システムでは、AI Agent が状況に応じて必要なツールを動的に選択している
+本システムでは、AI Agent が状況に応じて必要なツールを動的に選択し、最終的な回答を生成する  
+Agent が使用可能なツールは以下となる  
 
-```text
-Tool #1: get_calendar_context_tool
-Tool #2: get_weather_context_tool
-Tool #3: generate_sensor_chart_report_tool
-```
+| No. | ツール名 | 用途 |
+|---|---|---|
+| #1 | get_calendar_context_tool | Google Calendar からスケジュールを取得 |
+| #2 | get_weather_context_tool | Open Meteo から 天気情報を取得 |
+| #3 | generate_sensor_chart_report_tool | 室内データのグラフ画像と要約を取得 |
 
-📝TODO:
-- CloudWatch Logs のスクリーンショットを貼る
-- 「ツールを推論で選択している」様子が分かる部分を切り取る
+CloudWatch Logs のログから、Agent が推論時にツールを選択していることが確認できる  
+
+ユーザに **明日の朝の天気と予定** を質問されたことに対して、  
+Agent が `get_calendar_context_tool` と `get_weather_context_tool` の使用を判断し、  
+ツールの実行結果を基に最終的な回答を生成していることがわかる  
+![CloudWatchログ1](./docs/img/readme/7.png)
+
+ユーザに **1日のCO2濃度の推移** を質問されたことに対して、  
+Agent が `generate_sensor_chart_report_tool` の使用を判断し、  
+ツールの実行結果を基に室内環境レポートを生成していることがわかる  
+![CloudWatchログ2](./docs/img/readme/8.png)
 
 ---
 
 # システム概要
 
 在宅ワークで仕事に集中していると、以下の要素に気づきにくい  
-これらが原因で、仕事効率の低下や体調不良を引き起こす可能性がある  
+これらが原因で、作業効率の低下や体調不良を引き起こす可能性がある  
+
 - 換気不足（CO2濃度上昇）
 - 温度 / 湿度の変化
 - 過密スケジュール
 - 天候の変化
 
-本システムでは、以下の情報を AI Agent が統合的に判断し、  
-ユーザに適切な行動提案を LINE 上で通知する  
-これにより、作業効率の向上や適切な体調管理を促すことを目的としている  
-- センサから得られた室内データ
-- 天気情報
-- Google Calendar
+本システムでは、このような情報を基に AI Agent が健康アドバイスを生成し、  
+ユーザに LINE 通知することで、作業効率の向上や適切な体調管理を促すことを目的としている  
 
 ---
 
 # 主な機能
 
-- CO2 / 温度 / 湿度 モニタリング
-- AI による健康アドバイス生成
-- 天気情報との統合判断
-- Google Calendar 連携
-- センサデータのグラフ生成
-- LINE Bot 通知
-- AgentCore Gateway による MCP Tool 管理
+本システムに搭載されている機能は以下となる  
+
+### 1. 健康アドバイス生成
+Agent が以下の情報を取得・統合的に判断し、ユーザに適切な行動提案を LINE 上で通知する  
+
+- センサから得られた室内データ（CO2 / 温度 / 湿度）
+- 天気情報（天気 / 最低・最高気温 / 湿度 / 気候アラート）
+- Google Calendar スケジュール（一時間以内の予定有無 / 直近の予定3件）
+
+また、Agent は **一定期間ごとの通知** と、**チャット応答** の異なる起動方法に対応している  
+
+### 2. 室内環境レポート生成
+Agent が指定期間における室内環境のレポートを作成し、LINE 上で報告する  
+レポートは以下の要素で構成される  
+
+- 室内データのグラフ画像（CO2 / 温度 / 湿度）
+- 室内データの傾向に基づいた Agent の分析コメント
+
+### 3. AgentCore Gateway による MCP Tool 管理
+Agent が Gateway 経由でツールを実行する仕組みにすることで、  
+実行環境の分離や運用コスト低減を実現している  
 
 ---
 
@@ -92,7 +149,7 @@ Tool #3: generate_sensor_chart_report_tool
 本システムでは、Strands Agents を利用して  
 複数ツールを推論ベースで動的選択する AI Agent を構築している  
 
-Agent は以下の情報を統合して判断する  
+前述の通り、Agent は以下の情報を統合して判断する  
 - 室内環境
 - 天気
 - スケジュール
@@ -174,14 +231,14 @@ AWS マネージドな構成で動作する
 | 技術 | 用途 |
 |---|---|
 | AWS Lambda | Agent / Tool 実行 |
-| Amazon Bedrock | LLM |
+| Amazon Bedrock | LLM 基盤 |
 | Strands Agents | AI Agent Framework |
 | AgentCore Gateway | MCP Tool 管理 |
 | MCP protocol | Tool 標準化 |
 | AWS IoT Core | MQTT ingestion |
 | DynamoDB | センサーデータ保存 |
 | Athena | データ分析 |
-| Grafana | 可視化 |
+| Grafana | データ可視化 |
 | LINE Messaging API | ユーザー通知 |
 | Raspberry Pi | センサーデバイス |
 | SCD40 | CO2 / 温湿度センサ |
