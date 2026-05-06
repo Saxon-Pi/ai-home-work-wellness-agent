@@ -11,6 +11,9 @@ work
 .DS_Store
 **/.DS_Store
 
+# Config
+config/local.json
+
 # =========================
 # AgentCore
 # =========================
