@@ -1,7 +1,7 @@
 # AI Home Work Wellness Agent
 
-室内環境・天気・予定を統合的に判断し、  
-LINE 上で健康アドバイスを行う AI Wellness Agent
+本システムは、室内環境・天気・スケジュールを AI が統合的に判断し、  
+LINE チャットでの質問や、健康アドバイスの生成が可能な AI Wellness Agent である　　
 
 ---
 
@@ -14,7 +14,7 @@ LINE 上で健康アドバイスを行う AI Wellness Agent
 - [技術的な工夫ポイント](#技術的な工夫ポイント)
 - [使用技術](#使用技術)
 - [セットアップ手順](#セットアップ手順)
-- [今後の改善](#今後の改善)
+- [今後の改善ポイント](#今後の改善ポイント)
 - [License](#license)
 
 ---
@@ -34,7 +34,6 @@ LINE 上で健康アドバイスを行う AI Wellness Agent
 
 **室内環境： 要対応** なときの通知例:  
 ![定期通知-要対応](./docs/img/readme/2.PNG)
-- 定期実行（良好 / 注意 / 用対応）
 
 ---
 
@@ -204,26 +203,27 @@ flowchart TD
 # AI Agent アーキテクチャ
 
 本システムでは、Strands Agents を利用して  
-複数ツールを推論ベースで動的選択する AI Agent を構築している  
+推論を進める中で、複数ツールを動的に選択する AI Agent を構築している  
 
-前述の通り、Agent は以下の情報を統合して判断する  
-- 室内環境
-- 天気
-- スケジュール
-- 時間帯
-- センサデータ推移
-
+Agent は以下の情報を統合した判断をすることが可能となる    
+- 現在の室内環境（CO2 / 温度 / 湿度）
+- 過去の室内環境の推移（最低・最高 / 平均 / トレンド）
+- 現在時刻、季節
+- 天気情報
+- カレンダーに登録されたスケジュール
+- 
 ---
 
 ## MCP / AgentCore Gateway によるツール管理
 
-ツール実行は AgentCore Gateway + MCP protocol に統一している
+ツール実行は **AgentCore Gateway + MCP protocol** に統一している  
 
-これにより、以下を実現した構成としている
-- Agent 側からツール実装を疎結合化
-- Lambda / ECS / 外部 API を統一的に扱う
-- schema ベースでツールを動的認識
-- ツール追加時の Agent 修正を最小化
+今回は、以下のメリットを考慮して AgentCore Gateway を採用している  
+
+- Agent とツールを疎結合にすることができる
+- ツール実行環境（Lambda / ECS / 外部 API / etc…）を統一的に扱うことができる
+- schema ベースでツールを一覧化し、Agent に 動的認識させることができる
+- ツール追加時に Agent 側の修正を最小化することができる
 
 📝TODO:
 - MCP / AgentCore Gateway の構成図を貼る
@@ -233,19 +233,27 @@ flowchart TD
 
 # 技術的な工夫ポイント
 
-## 1. 推論ベースの Tool Selection
+## 1. 推論ベースのツール選択
 
-単純な Function Calling ではなく、  
-AI Agent が状況に応じて必要なツールを判断している  
+本システムでは、単純な関数呼び出しをせずに、  
+AI Agent が状況に応じて必要なツールを選択・実行することで回答を生成している  
 
-例:  
+これにより、ユーザの指示に対して Agent が自律的に行動し、柔軟な対応をとることができる  
 
-- 「明日の朝の天気と予定を教えて」
-  - Calendar Tool
-  - Weather Tool
+ツール使用例:  
 
-- 「1日の CO2 推移を見せて」
-  - Report Generation Tool
+- ユーザ:「明日の朝の天気と予定を教えて」
+- Agent:（明日の朝（5月8日 9:00）の予定を確認してから天気を取得します）
+  - get_calendar_context_tool を使用
+  - get_weather_context_tool を使用
+
+👉 Agent はツールから得た情報から回答を生成し、LINE に返答する
+
+- ユーザ:「今日の CO2 推移を報告して」
+- Agent:（1日の室内環境のデータとグラフを取得します）
+  - generate_sensor_chart_report_tool を使用
+
+👉 Agent はツールから得た情報とグラフからレポートを生成し、LINE に返答する
 
 ---
 
@@ -254,32 +262,28 @@ AI Agent が状況に応じて必要なツールを判断している
 ツール実行を MCP protocol に統一し、  
 AgentCore Gateway から tool schema を取得する構成としている  
 
-これにより、以下を実現している　　
-- ツール実装の分離
-- 実行環境の抽象化
-- 将来的な Runtime 移行
-- サーバレス MCP 構成
+AgentCore Gateway を　
+- Agent とツール実装を分離することができる
+- Agent が ツールの実行環境や処理内容を意識することがなくなる
+- 将来的に AgentCore Runtime への移行が楽にできる
+- サーバレス MCP 構成を実現できる
 
 ---
 
 ## 3. サーバレス構成
 
-本システムは Lambda + AgentCore Gateway により、  
+本システムは Lambda（MCP Server） + AgentCore Gateway により、  
 MCP ベースのツールアーキテクチャをサーバレスで実現している　　
 
-従来の MCP Server のように ECS などの常駐サーバを必要とせず、  
-AWS マネージドな構成で動作する  
+従来の MCP Server のように、ツールの管理・公開に ECS などの常駐サーバを必要とせず、  
+AWS マネージドな構成で動作するすることができる  
 
 ---
 
 ## 4. コンテキスト統合理解
 
-単なるセンサ監視ではなく、以下の情報を横断的に判断し、  
-ユーザー行動に合わせた自然なアドバイスを生成する  
-- 室内環境
-- 天気
-- スケジュール
-- 時間帯
+単なるセンサデータの監視ではなく、ツールから得られた情報を横断的に判断し、  
+ユーザーの予定や行動に合わせた自然なアドバイスを生成する  
 
 ---
 
@@ -293,11 +297,11 @@ AWS マネージドな構成で動作する
 | AgentCore Gateway | MCP Tool 管理 |
 | MCP protocol | Tool 標準化 |
 | AWS IoT Core | MQTT ingestion |
-| DynamoDB | センサーデータ保存 |
+| DynamoDB | センサデータ保存 |
 | Athena | データ分析 |
 | Grafana | データ可視化 |
 | LINE Messaging API | ユーザー通知 |
-| Raspberry Pi | センサーデバイス |
+| Raspberry Pi | センサデバイス |
 | SCD40 | CO2 / 温湿度センサ |
 
 ---
@@ -308,24 +312,39 @@ AWS マネージドな構成で動作する
 
 | ドキュメント | 内容 |
 |---|---|
-| [00_システム構想メモ.md](./docs/00_システム構想メモ.md) | 全体構想 |
-| [01_SCD40接続・MQTT送信手順書.md](./docs/01_SCD40接続・MQTT送信手順書.md) | センサ構築 |
-| [02_IoTCore-ラズパイ接続手順書.md](./docs/02_IoTCore-ラズパイ接続手順書.md) | IoT Core 接続 |
-| [03_Grafanaデータ可視化手順書.md](./docs/03_Grafanaデータ可視化手順書.md) | Grafana |
-| [04_StrandsAgent化構想メモ.md](./docs/04_StrandsAgent化構想メモ.md) | Agent 化 |
-| [05_ツールMCP化構想メモ.md](./docs/05_ツールMCP化構想メモ.md) | MCP 化 |
-| [06_AgentCore化構想メモ.md](./docs/06_AgentCore化構想メモ.md) | AgentCore Gateway 化 |
+| [00_システム構想メモ.md](./docs/00_システム構想メモ.md) | 設計・開発前の構想メモ |
+| [02_IoTCore-ラズパイ接続手順書.md](./docs/02_IoTCore-ラズパイ接続手順書.md) | ラズパイと IoT Core の接続手順書 |
+| [01_SCD40接続・MQTT送信手順書.md](./docs/01_SCD40接続・MQTT送信手順書.md) | センサとラズパイを接続し、データを IoT Core に送信する手順書 |
+| [03_Grafanaデータ可視化手順書.md](./docs/03_Grafanaデータ可視化手順書.md) | ラズパイから送信したデータを Grafana で可視化する手順書 |
+| [04_StrandsAgent化構想メモ.md](./docs/04_StrandsAgent化構想メモ.md) | 単体 Lambda で実装した AI システムを、ツールを使う Agent にバージョンアップするための方針検討内容 |
+| [05_ツールMCP化構想メモ.md](./docs/05_ツールMCP化構想メモ.md) | ツールを MCP Server Lambda 上で実行するための方針検討内容 |
+| [06_AgentCore化構想メモ.md](./docs/06_AgentCore化構想メモ.md) | ツールを AgentCore Gateway で管理するための方針検討内容 |
 
 ---
 
-# 今後の改善
+# 今後の改善ポイント
 
-- AgentCore Runtime への移行
-- Memory によるユーザー行動学習
-- Observability 強化
-- マルチ Agent 化
-- 長期行動分析
+現時点でも要件を満たした安定稼働できるシステムとして完成しているが、  
+より本格的な AI Agent システムを実現するために、以下の改善検討をしている  
 
+### AgentCore Runtime への移行
+ツールと同様に、AI Agent の実行環境も AgentCore 上で管理することで、  
+より統一感のあるシステムを構築することができる  
+
+### AgentCore Memory によるユーザー行動学習
+Agent に短期記憶を持たせることで、セッションベースの応答をすることができる  
+
+### AgentCore Observability 強化
+よりセキュアで安定した AI システムを実現するため、  
+セッション数、レイテンシ、実行時間、トークン使用量、エラー率 などを監視する
+
+### マルチ Agent 化
+複数の Agent や、より多彩なツールをシステムに追加することで、  
+AI システムとしての機能性や専門性を高める  
+
+### 長期行動分析
+LINE チャットをする中で、ユーザの行動特性や嗜好を判断し、  
+よりユーザに最適化された健康アドバイスができるようにする  
 ---
 
 # License

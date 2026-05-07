@@ -60,7 +60,7 @@ AWS 公式ドキュメント:
 - Agent は Gateway から tool schema を取得するため、
   Agent 側でツール定義を実装する必要がなくなる
 - 新規ツール追加時も、
-  Gateway target と schema.json を追加するだけで利用可能
+  Gateway Target と schema.json を追加するだけで利用可能
 - Lambda / ECS / 外部API など、
   ツール実行環境を統一的に扱える
 - Agent 側から実行環境の違いを意識する必要がない
@@ -151,7 +151,7 @@ EOF
 agentcore deploy
 ```
 
-### ④ Gateway target 追加
+### ④ Gateway Target 追加
 Agent がツール一覧として参照する `schema.json` を作成し、ツールを target として登録する  
 ```bash
 mkdir -p schemas
@@ -215,6 +215,9 @@ agentcore deploy
 デプロイが成功したらコンソールから Gateway を確認する  
 **Amazon Bedrock AgentCore > ゲートウェイ > WellnessAgent-wellness-tools-gateway**  
 ![Gateway コンソール画面](./img/agentcore/0.png)
+
+Gateway Target は MCP Server Lambda となっていることが確認できる  
+![Target コンソール画面](./img/agentcore/1.png)
 
 **ゲートウェイリソース URL** を Agent Lambda `wellnessAgentFn`、`lineChatHandlerFn` に登録すれば完了  
 
