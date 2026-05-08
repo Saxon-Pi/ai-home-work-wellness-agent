@@ -1,11 +1,11 @@
+<!-- omit in toc -->
 # AI Home Work Wellness Agent
 
 本システムは、室内環境・天気・スケジュールを AI が統合的に判断し、  
-LINE チャットでの質問や、健康アドバイスの生成が可能な AI Wellness Agent である　　
+LINE チャットでの質問や、健康アドバイスの生成が可能な AI Wellness Agent である  
 
 ---
 
-- [AI Home Work Wellness Agent](#ai-home-work-wellness-agent)
 - [デモンストレーション](#デモンストレーション)
 - [システム概要](#システム概要)
 - [主な機能](#主な機能)
@@ -21,43 +21,56 @@ LINE チャットでの質問や、健康アドバイスの生成が可能な AI
 
 # デモンストレーション
 
-## 健康アドバイス定期通知機能
+## 1. 健康アドバイス定期通知機能
 
 室内の **CO2濃度、温度、湿度** に応じて、室内環境を評価し、  
 天気やスケジュールに基づいた健康アドバイスを定期通知してくれる機能  
 
-**室内環境： 良好** なときの通知例:  
-![定期通知-良好](./docs/img/readme/0.PNG)
+**室内環境： 良好** のときの通知例:  
+<p align="center">
+  <img src="./docs/img/readme/0.PNG" alt="定期通知-良好" width="700">
+</p>
 
-**室内環境： 注意** なときの通知例:  
-![定期通知-注意](./docs/img/readme/1.PNG)
+**室内環境： 注意** のときの通知例:  
+<p align="center">
+  <img src="./docs/img/readme/1.PNG" alt="定期通知-注意" width="700">
+</p>
 
-**室内環境： 要対応** なときの通知例:  
-![定期通知-要対応](./docs/img/readme/2.PNG)
-
+**室内環境： 要対応** のときの通知例:  
+<p align="center">
+  <img src="./docs/img/readme/2.PNG" alt="定期通知-要対応" width="700">
+</p>
 ---
 
-## LINE での対話型 AI アシスタント機能
+## 2. LINE での対話型 AI アシスタント機能
 
 室内環境や天気、スケジュールに関する質問を LINE 上でやりとりできる機能  
 
 **「明日の昼の天気と予定を教えて」** に対する回答例:  
-![LINEチャット応答1](./docs/img/readme/3.PNG)
+<p align="center">
+  <img src="./docs/img/readme/3.PNG" alt="LINEチャット応答1" width="700">
+</p>
 
 **「明日はどんな1日になりそう？」** に対する回答例:  
-![LINEチャット応答2](./docs/img/readme/4.PNG)
+<p align="center">
+  <img src="./docs/img/readme/4.PNG" alt="LINEチャット応答2" width="700">
+</p>
 
 ---
 
-## 室内環境レポート生成機能
+## 3. 室内環境レポート生成機能
 
 指定した期間の室内環境のレポートを作成・報告してくれる機能  
 
 **1日の室内環境レポート** の例:  
-![レポート内容](./docs/img/readme/5.PNG)
+<p align="center">
+  <img src="./docs/img/readme/5.PNG" alt="レポート内容" width="700">
+</p>
 
-グラフは以下のように画像形式で作成される  
-![室内環境グラフ](./docs/img/readme/6.PNG)
+グラフは以下のような画像形式で作成される  
+<p align="center">
+  <img src="./docs/img/readme/6.PNG" alt="室内環境グラフ" width="900">
+</p>
 
 ---
 
@@ -69,19 +82,21 @@ Agent が使用可能なツールは以下となる
 | No. | ツール名 | 用途 |
 |---|---|---|
 | #1 | get_calendar_context_tool | Google Calendar からスケジュールを取得 |
-| #2 | get_weather_context_tool | Open Meteo から 天気情報を取得 |
+| #2 | get_weather_context_tool | Open-Meteo から天気情報を取得 |
 | #3 | generate_sensor_chart_report_tool | 室内データのグラフ画像と要約を取得 |
 
-CloudWatch Logs のログから、Agent が推論時にツールを選択していることが確認できる  
+CloudWatch Logs から、Agent が推論時にツールを選択していることが確認できる  
 
-ユーザに **明日の朝の天気と予定** を質問されたことに対して、  
+#### ログ ①: ユーザに「明日の朝の天気と予定」について質問された場合
+
 Agent が `get_calendar_context_tool` と `get_weather_context_tool` の使用を判断し、  
-ツールの実行結果を基に最終的な回答を生成していることがわかる  
+ツールの実行結果を基に最終的な回答を生成していることが確認できる  
 ![CloudWatchログ1](./docs/img/readme/7.png)
 
-ユーザに **1日のCO2濃度の推移** を質問されたことに対して、  
+#### ログ ②: ユーザに「1日のCO2濃度の推移」について質問された場合
+  
 Agent が `generate_sensor_chart_report_tool` の使用を判断し、  
-ツールの実行結果を基に室内環境レポートを生成していることがわかる  
+ツールの実行結果を基に室内環境レポートを生成していることが確認できる  
 ![CloudWatchログ2](./docs/img/readme/8.png)
 
 ---
@@ -110,20 +125,16 @@ Agent が以下の情報を取得・統合的に判断し、ユーザに適切�
 
 - センサから得られた室内データ（CO2 / 温度 / 湿度）
 - 天気情報（天気 / 最低・最高気温 / 湿度 / 気候アラート）
-- Google Calendar スケジュール（一時間以内の予定有無 / 直近の予定3件）
+- Google Calendar スケジュール（1時間以内の予定有無 / 直近の予定3件）
 
-また、Agent は **一定期間ごとの通知** と、**チャット応答** の異なる起動方法に対応している  
+また、Agent は **定期通知** と、**チャット応答** の異なる起動方法に対応している  
 
 ### 2. 室内環境レポート生成
-Agent が指定期間における室内環境のレポートを作成し、LINE 上で報告する  
+Agent が指定期間の室内環境レポートを作成し、LINE 上で報告する  
 レポートは以下の要素で構成される  
 
 - 室内データのグラフ画像（CO2 / 温度 / 湿度）
-- 室内データの傾向に基づいた Agent の分析コメント
-
-### 3. AgentCore Gateway による MCP Tool 管理
-Agent が Gateway 経由でツールを実行する仕組みにすることで、  
-実行環境の分離や運用コスト低減を実現している  
+- 室内データの傾向を分析した Agent のコメント
 
 ---
 
@@ -202,32 +213,48 @@ flowchart TD
 
 # AI Agent アーキテクチャ
 
-本システムでは、Strands Agents を利用して  
+## Strands Agent によるツール利用
+
+本システムでは、Strands Agents を使用しており、  
 推論を進める中で、複数ツールを動的に選択する AI Agent を構築している  
 
-Agent は以下の情報を統合した判断をすることが可能となる    
-- 現在の室内環境（CO2 / 温度 / 湿度）
-- 過去の室内環境の推移（最低・最高 / 平均 / トレンド）
-- 現在時刻、季節
-- 天気情報
-- カレンダーに登録されたスケジュール
-- 
+Agent は以下のコンテキストを横断的に利用して推論を行う  
+
+- 室内環境データ（CO2 / 温度 / 湿度）
+- 天気・季節情報
+- Google Calendar の予定
+- 時刻や時間帯、季節
+
 ---
 
 ## MCP / AgentCore Gateway によるツール管理
 
-ツール実行は **AgentCore Gateway + MCP protocol** に統一している  
+ツール間通信は **MCP Protocol**、ツール管理は **AgentCore Gateway** に統一している  
 
 今回は、以下のメリットを考慮して AgentCore Gateway を採用している  
 
 - Agent とツールを疎結合にすることができる
 - ツール実行環境（Lambda / ECS / 外部 API / etc…）を統一的に扱うことができる
-- schema ベースでツールを一覧化し、Agent に 動的認識させることができる
+- Agent は tool schema を通じて、ツールを動的に認識することができる
 - ツール追加時に Agent 側の修正を最小化することができる
+  
+```mermaid
+sequenceDiagram
+    participant Agent as Strands Agent
+    participant Gateway as AgentCore Gateway
+    participant Tool as MCP Server Lambda
 
-📝TODO:
-- MCP / AgentCore Gateway の構成図を貼る
-- 「Agent ⇔ Gateway ⇔ Lambda Tool」の流れを図示
+    Agent->>Gateway: fetch available tool schemas
+    Gateway-->>Agent: available tools
+
+    Agent->>Gateway: execute get_weather_context_tool
+    Gateway->>Tool: invoke Lambda tool
+
+    Tool-->>Gateway: weather result
+    Gateway-->>Agent: tool response
+
+    Agent->>Agent: generate final answer
+```
 
 ---
 
@@ -235,10 +262,11 @@ Agent は以下の情報を統合した判断をすることが可能となる
 
 ## 1. 推論ベースのツール選択
 
-本システムでは、単純な関数呼び出しをせずに、  
-AI Agent が状況に応じて必要なツールを選択・実行することで回答を生成している  
+Agent は単純なルールベース処理ではなく、  
+室内環境、天気、スケジュールなど複数のコンテキストを横断的に利用しながら、  
+状況に応じたツール選択や、自然な回答を生成している  
 
-これにより、ユーザの指示に対して Agent が自律的に行動し、柔軟な対応をとることができる  
+これにより、ユーザの指示に対して Agent が自律的に行動し、柔軟な対応をすることができる  
 
 ツール使用例:  
 
@@ -259,31 +287,27 @@ AI Agent が状況に応じて必要なツールを選択・実行すること�
 
 ## 2. MCP ベースの疎結合アーキテクチャ
 
-ツール実行を MCP protocol に統一し、  
-AgentCore Gateway から tool schema を取得する構成としている  
+Agent は MCP Protocol を通じて Gateway へアクセスし、  
+tool schema を動的に取得する構成としている。  
 
-AgentCore Gateway を　
-- Agent とツール実装を分離することができる
-- Agent が ツールの実行環境や処理内容を意識することがなくなる
-- 将来的に AgentCore Runtime への移行が楽にできる
-- サーバレス MCP 構成を実現できる
+これにより、  
+
+- Agent とツール実装を分離できる
+- Lambda / ECS / 外部 API を統一的に扱える
+- ツール追加時の Agent 修正を最小化できる
+- AgentCore Runtime への移行を容易にできる
+
+など、拡張性の高いツールアーキテクチャを実現している。  
 
 ---
 
 ## 3. サーバレス構成
 
 本システムは Lambda（MCP Server） + AgentCore Gateway により、  
-MCP ベースのツールアーキテクチャをサーバレスで実現している　　
+MCP ベースのツールアーキテクチャをサーバレスで実現している  
 
 従来の MCP Server のように、ツールの管理・公開に ECS などの常駐サーバを必要とせず、  
-AWS マネージドな構成で動作するすることができる  
-
----
-
-## 4. コンテキスト統合理解
-
-単なるセンサデータの監視ではなく、ツールから得られた情報を横断的に判断し、  
-ユーザーの予定や行動に合わせた自然なアドバイスを生成する  
+AWS マネージドな構成で動作する  
 
 ---
 
@@ -295,7 +319,7 @@ AWS マネージドな構成で動作するすることができる
 | Amazon Bedrock | LLM 基盤 |
 | Strands Agents | AI Agent Framework |
 | AgentCore Gateway | MCP Tool 管理 |
-| MCP protocol | Tool 標準化 |
+| MCP Protocol | Tool 標準化 |
 | AWS IoT Core | MQTT ingestion |
 | DynamoDB | センサデータ保存 |
 | Athena | データ分析 |
@@ -308,13 +332,14 @@ AWS マネージドな構成で動作するすることができる
 
 # セットアップ手順
 
-詳細なセットアップ手順は docs 配下を参照
+各フェーズの詳細なセットアップ手順や、設計方針をまとめた構想メモは以下となる  
+（docs フォルダ配下に格納）  
 
 | ドキュメント | 内容 |
 |---|---|
 | [00_システム構想メモ.md](./docs/00_システム構想メモ.md) | 設計・開発前の構想メモ |
-| [02_IoTCore-ラズパイ接続手順書.md](./docs/02_IoTCore-ラズパイ接続手順書.md) | ラズパイと IoT Core の接続手順書 |
-| [01_SCD40接続・MQTT送信手順書.md](./docs/01_SCD40接続・MQTT送信手順書.md) | センサとラズパイを接続し、データを IoT Core に送信する手順書 |
+| [01_IoTCore-ラズパイ接続手順書.md](./docs/01_IoTCore-ラズパイ接続手順書.md) | ラズパイと IoT Core の接続手順書 |
+| [02_SCD40接続・MQTT送信手順書.md](./docs/02_SCD40接続・MQTT送信手順書.md) | センサとラズパイを接続し、データを IoT Core に送信する手順書 |
 | [03_Grafanaデータ可視化手順書.md](./docs/03_Grafanaデータ可視化手順書.md) | ラズパイから送信したデータを Grafana で可視化する手順書 |
 | [04_StrandsAgent化構想メモ.md](./docs/04_StrandsAgent化構想メモ.md) | 単体 Lambda で実装した AI システムを、ツールを使う Agent にバージョンアップするための方針検討内容 |
 | [05_ツールMCP化構想メモ.md](./docs/05_ツールMCP化構想メモ.md) | ツールを MCP Server Lambda 上で実行するための方針検討内容 |
@@ -324,27 +349,34 @@ AWS マネージドな構成で動作するすることができる
 
 # 今後の改善ポイント
 
-現時点でも要件を満たした安定稼働できるシステムとして完成しているが、  
-より本格的な AI Agent システムを実現するために、以下の改善検討をしている  
+現時点でも実用的な AI Agent として動作しているが、  
+より本格的なシステムへと改善するために、以下の方針を検討している  
 
 ### AgentCore Runtime への移行
-ツールと同様に、AI Agent の実行環境も AgentCore 上で管理することで、  
-より統一感のあるシステムを構築することができる  
 
-### AgentCore Memory によるユーザー行動学習
-Agent に短期記憶を持たせることで、セッションベースの応答をすることができる  
+ツール管理だけでなく Agent 実行までを AgentCore に統合することで、
+より AgentCore ネイティブな構成にすることができる  
+
+### AgentCore Memory によるコンテキスト保持
+
+Agent に短期記憶を持たせることで、  
+ユーザとの過去会話や行動履歴を踏まえた応答を実現する  
 
 ### AgentCore Observability 強化
-よりセキュアで安定した AI システムを実現するため、  
-セッション数、レイテンシ、実行時間、トークン使用量、エラー率 などを監視する
+
+Agent の挙動や性能を継続的に監視・分析するため、  
+セッション数、レイテンシ、実行時間、トークン使用量、エラー率などを可視化する  
 
 ### マルチ Agent 化
+
 複数の Agent や、より多彩なツールをシステムに追加することで、  
 AI システムとしての機能性や専門性を高める  
 
 ### 長期行動分析
-LINE チャットをする中で、ユーザの行動特性や嗜好を判断し、  
-よりユーザに最適化された健康アドバイスができるようにする  
+
+LINE チャットをする中で、Agent がユーザの行動特性や嗜好を判断し、  
+よりユーザに最適化された回答ができるようにする  
+
 ---
 
 # License
