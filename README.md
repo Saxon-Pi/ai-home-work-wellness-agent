@@ -355,7 +355,7 @@ AWS マネージドな構成で動作する
 
 ### AgentCore Runtime への移行
 
-ツール管理だけでなく Agent 実行までを AgentCore に統合することで、
+ツール管理だけでなく Agent 実行までを AgentCore に統合することで、  
 より AgentCore ネイティブな構成にすることができる  
 
 ### AgentCore Memory によるコンテキスト保持
