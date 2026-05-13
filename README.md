@@ -141,74 +141,7 @@ Agent が指定期間の室内環境レポートを作成し、LINE 上で報告
 
 # システムアーキテクチャ
 
-```mermaid
-flowchart TD
-    %% =====================
-    %% User Interface
-    %% =====================
-    User[LINE User] --> LINE[LINE Messaging API]
-    LINE --> APIGW[API Gateway<br/>LINE Webhook]
-
-    %% =====================
-    %% Chat Agent
-    %% =====================
-    APIGW --> ChatAgent[Chat Agent Lambda<br/>lineChatHandlerFn]
-
-    ChatAgent --> Strands[Strands Agent]
-    Strands --> Bedrock[Amazon Bedrock<br/>Claude]
-
-    %% =====================
-    %% Wellness Agent
-    %% =====================
-    EventBridge[EventBridge Scheduler] --> WellnessAgent[Wellness Agent Lambda<br/>wellnessAgentFn]
-
-    WellnessAgent --> WellnessStrands[Strands Agent]
-    WellnessStrands --> Bedrock
-
-    %% =====================
-    %% Local Tools
-    %% =====================
-    Strands --> LocalTools[Local Tools<br/>Environment / LINE]
-    WellnessStrands --> LocalTools
-
-    LocalTools --> MetricsTable[(DynamoDB)]
-    LocalTools --> LINE
-
-    %% =====================
-    %% AgentCore Gateway
-    %% =====================
-    Strands --> MCPClient[MCPClient]
-    WellnessStrands --> MCPClient
-
-    MCPClient --> AgentCore[AgentCore Gateway]
-
-    AgentCore --> MCPServer[MCP Server Lambda<br/>mcpServerFn]
-
-    %% =====================
-    %% Tool Execution
-    %% =====================
-    MCPServer --> Core[common/core.py]
-
-    Core --> WeatherAPI[Open-Meteo API]
-    Core --> GoogleCalendar[Google Calendar API]
-    Core --> Athena[Athena]
-    Core --> ReportBucket[(S3 Report Images)]
-
-    Athena --> MetricsTable
-
-    %% =====================
-    %% IoT
-    %% =====================
-    Sensor[SCD40 Sensor] --> Raspi[Raspberry Pi]
-    Raspi --> IoTCore[AWS IoT Core]
-    IoTCore --> IngestLambda[Ingest Lambda]
-    IngestLambda --> MetricsTable
-
-    %% =====================
-    %% Visualization
-    %% =====================
-    Grafana[Grafana Dashboard] --> Athena
-```
+![アーキテクチャ図](./docs/img/readme/AI-Wellness-Agent-Architecture.png)
 
 ---
 
@@ -238,24 +171,8 @@ Agent は以下のコンテキストを横断的に利用して推論を行う
 - ツール実行環境（Lambda / ECS / 外部 API / etc…）を統一的に扱うことができる
 - Agent は tool schema を通じて、ツールを動的に認識することができる
 - ツール追加時に Agent 側の修正を最小化することができる
-  
-```mermaid
-sequenceDiagram
-    participant Agent as Strands Agent
-    participant Gateway as AgentCore Gateway
-    participant Tool as MCP Server Lambda
 
-    Agent->>Gateway: fetch available tool schemas
-    Gateway-->>Agent: available tools
-
-    Agent->>Gateway: execute get_weather_context_tool
-    Gateway->>Tool: invoke Lambda tool
-
-    Tool-->>Gateway: weather result
-    Gateway-->>Agent: tool response
-
-    Agent->>Agent: generate final answer
-```
+![シーケンス図](./docs//img/readme/AgentCore-Sequence-Diagram.png)
 
 ---
 
@@ -377,6 +294,12 @@ AI システムとしての機能性や専門性を高める
 
 LINE チャットをする中で、Agent がユーザの行動特性や嗜好を判断し、  
 よりユーザに最適化された回答ができるようにする  
+
+### データ・ツールの追加
+
+例えば、心拍数や歩数、体重・体脂肪データなども Cloud 上に収集し、  
+Agent に運動・体重管理機能を持たせることで、  
+より深い、パーソナライズされた健康アドバイスを生成できるようにする  
 
 ---
 

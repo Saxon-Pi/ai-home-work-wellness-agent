@@ -7,6 +7,7 @@
 - [今回の AgentCore化 対象](#今回の-agentcore化-対象)
 - [移行方針](#移行方針)
 - [ツールの AgentCore Gateway化 手順](#ツールの-agentcore-gateway化-手順)
+- [付録](#付録)
 
 ---
 
@@ -263,3 +264,94 @@ AgentCore CLI を使用して Gateway を作成した
 将来的には `@aws/agentcore-cdk` を利用した既存 CDK への統合も検討する  
 
 ---
+
+# 付録
+
+## システムアーキテクチャ
+```mermaid
+flowchart TD
+    %% =====================
+    %% User Interface
+    %% =====================
+    User[LINE User] --> LINE[LINE Messaging API]
+    LINE --> APIGW[API Gateway<br/>LINE Webhook]
+
+    %% =====================
+    %% Chat Agent
+    %% =====================
+    APIGW --> ChatAgent[Chat Agent Lambda<br/>lineChatHandlerFn]
+
+    ChatAgent --> Strands[Strands Agent]
+    Strands --> Bedrock[Amazon Bedrock<br/>Claude]
+
+    %% =====================
+    %% Wellness Agent
+    %% =====================
+    EventBridge[EventBridge Scheduler] --> WellnessAgent[Wellness Agent Lambda<br/>wellnessAgentFn]
+
+    WellnessAgent --> WellnessStrands[Strands Agent]
+    WellnessStrands --> Bedrock
+
+    %% =====================
+    %% Local Tools
+    %% =====================
+    Strands --> LocalTools[Local Tools<br/>Environment / LINE]
+    WellnessStrands --> LocalTools
+
+    LocalTools --> MetricsTable[(DynamoDB)]
+    LocalTools --> LINE
+
+    %% =====================
+    %% AgentCore Gateway
+    %% =====================
+    Strands --> MCPClient[MCPClient]
+    WellnessStrands --> MCPClient
+
+    MCPClient --> AgentCore[AgentCore Gateway]
+
+    AgentCore --> MCPServer[MCP Server Lambda<br/>mcpServerFn]
+
+    %% =====================
+    %% Tool Execution
+    %% =====================
+    MCPServer --> Core[common/core.py]
+
+    Core --> WeatherAPI[Open-Meteo API]
+    Core --> GoogleCalendar[Google Calendar API]
+    Core --> Athena[Athena]
+    Core --> ReportBucket[(S3 Report Images)]
+
+    Athena --> MetricsTable
+
+    %% =====================
+    %% IoT
+    %% =====================
+    Sensor[SCD40 Sensor] --> Raspi[Raspberry Pi]
+    Raspi --> IoTCore[AWS IoT Core]
+    IoTCore --> IngestLambda[Ingest Lambda]
+    IngestLambda --> MetricsTable
+
+    %% =====================
+    %% Visualization
+    %% =====================
+    Grafana[Grafana Dashboard] --> Athena
+```
+
+## AgentCore Gateway シーケンス図
+```mermaid
+sequenceDiagram
+    participant Agent as Strands Agent
+    participant Gateway as AgentCore Gateway
+    participant Tool as MCP Server Lambda
+
+    Agent->>Gateway: fetch available tool schemas
+    Gateway-->>Agent: available tools
+
+    Agent->>Gateway: execute get_weather_context_tool
+    Gateway->>Tool: invoke Lambda tool
+
+    Tool-->>Gateway: weather result
+    Gateway-->>Agent: tool response
+
+    Agent->>Agent: generate final answer
+```
